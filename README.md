@@ -35,11 +35,20 @@ The full list, with what each one does and where it can drop, is in [ITEMS.md](I
 
 ## Install
 
-1. Install MelonLoader into the game folder and run the game once so it sets itself up.
-2. Copy `PummelCustomItems.dll` into `<game>/Mods/`.
-3. Copy the `pciassets` bundle into `<game>/UserData/PummelCustomItems/`.
+1. Install [MelonLoader](https://melonloader.co/) into the game folder and run the game once
+   so it sets itself up.
+2. Download the archive from the [releases page](../../releases) and extract it **into the
+   game folder**. It is laid out to match, so the mod, its assets and the switch scripts all
+   land where they belong:
 
-Both files are on the [releases page](../../releases); building them yourself is below.
+```
+<game>/
+  Mods/PummelCustomItems.dll
+  UserData/PummelCustomItems/pciassets
+  Play Modded.bat, Play Vanilla.bat, switch-mod.ps1, switch-mod.sh
+```
+
+Building it yourself instead is described below.
 
 ## Playing online
 

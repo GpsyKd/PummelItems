@@ -16,15 +16,48 @@ param(
     [ValidateSet("status", "modded", "vanilla", "toggle")]
     [string]$Mode = "status",
 
-    [string]$Game = "F:\SteamLibrary\steamapps\common\Pummel Party",
+    [string]$Game,
     [switch]$Launch
 )
 
 $ErrorActionPreference = "Stop"
 $AppId = 880940
 
+# Where the game is depends on which drive Steam put it on, so it is looked for rather than
+# assumed. Dropping this script into the game folder makes the first check succeed and the
+# rest moot.
+function Find-Game {
+    if ($Game) { return $Game }
+
+    $candidates = @($PSScriptRoot)
+
+    # Every Steam library on this machine, read from Steam's own index.
+    $vdf = Join-Path ${env:ProgramFiles(x86)} "Steam\steamapps\libraryfolders.vdf"
+    if (Test-Path $vdf) {
+        Select-String -Path $vdf -Pattern '"path"\s+"(.+?)"' -AllMatches |
+            ForEach-Object { $_.Matches } |
+            ForEach-Object {
+                $candidates += Join-Path ($_.Groups[1].Value -replace '\\', '') "steamapps\common\Pummel Party"
+            }
+    }
+
+    foreach ($d in "$env:ProgramFiles(x86)", "C:", "D:", "E:", "F:") {
+        $candidates += "$d\SteamLibrary\steamapps\common\Pummel Party"
+    }
+
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path (Join-Path $c "UserData\Loader.cfg"))) { return $c }
+    }
+    return $null
+}
+
+$Game = Find-Game
+if (-not $Game) {
+    throw "Could not find Pummel Party with MelonLoader installed. Pass it explicitly:`n" +
+          "  switch-mod.ps1 $Mode -Game 'D:\SteamLibrary\steamapps\common\Pummel Party'"
+}
+
 $cfg = Join-Path $Game "UserData\Loader.cfg"
-if (-not (Test-Path $cfg)) { throw "Loader.cfg not found - is MelonLoader installed? Looked in: $cfg" }
 
 $lines = Get-Content $cfg
 
