@@ -38,21 +38,47 @@ namespace PummelCustomItems
             public float StartAlpha;
         }
 
+        // Nine grenade fragments go off inside the same frame. At full detail that was about
+        // 230 GameObjects and as many materials built at once, and the frame rate noticed -
+        // which is what the stutter after a frag grenade actually was. Small blasts do not
+        // need the full treatment anyway, and once several are already going nobody can pick
+        // a simplified one out of the pile.
+        private const int FullDetailPerFrame = 2;
+
+        private static int s_frame = -1;
+        private static int s_startedThisFrame;
+
+        private float m_detail = 1f;
+
         internal static void Play(Vector3 position, float radius)
         {
+            if (s_frame != Time.frameCount)
+            {
+                s_frame = Time.frameCount;
+                s_startedThisFrame = 0;
+            }
+            s_startedThisFrame++;
+
+            // A 2-unit puff has no business costing what a 5-unit one does.
+            float detail = Mathf.Clamp01(radius / 3.5f);
+            if (s_startedThisFrame > FullDetailPerFrame) detail *= 0.35f;
+
             GameObject host = new GameObject("PCI_Explosion");
             host.transform.position = position;
-            host.AddComponent<Explosion>().Begin(radius);
+            host.AddComponent<Explosion>().Begin(radius, detail);
         }
 
-        private void Begin(float radius)
+        private void Begin(float radius, float detail)
         {
             m_radius = Mathf.Max(0.5f, radius);
+            m_detail = Mathf.Clamp01(detail);
 
-            BuildLight();
+            // The flash and the fireball carry the read; everything else is trimming, so
+            // that is what gets dropped first when the budget is tight.
+            if (m_detail > 0.5f) BuildLight();
             BuildFlash();
             BuildFireball();
-            BuildShockwave();
+            if (m_radius >= 2.5f) BuildShockwave();
             BuildSparks();
         }
 
@@ -91,7 +117,7 @@ namespace PummelCustomItems
         /// </summary>
         private void BuildFireball()
         {
-            const int puffs = 7;
+            int puffs = Mathf.Max(2, Mathf.RoundToInt(7f * m_detail));
             for (int i = 0; i < puffs; i++)
             {
                 Vector3 off = Random.insideUnitSphere * m_radius * 0.42f;
@@ -139,7 +165,7 @@ namespace PummelCustomItems
 
         private void BuildSparks()
         {
-            const int sparks = 16;
+            int sparks = Mathf.Max(3, Mathf.RoundToInt(16f * m_detail));
             for (int i = 0; i < sparks; i++)
             {
                 GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);

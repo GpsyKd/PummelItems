@@ -163,9 +163,6 @@ namespace PummelCustomItems
         private Vector3 m_stickOffset;
         private float m_age;
 
-        // A projectile leaves from inside the thrower's own hit volume, so without a short
-        // grace period every proximity check would detonate it instantly on the thrower.
-        private const float SelfGrace = 0.35f;
 
         private readonly Collider[] m_hits = new Collider[32];
 
@@ -213,7 +210,7 @@ namespace PummelCustomItems
                     m_fuse -= Time.deltaTime;
 
                     if (m_spec.ProximityRadius > 0f && CheckProximity()) return;
-                    if (m_fuse <= 0f) OwnerExplode();
+                    if (m_fuse <= 0f) OwnerExplode("fuse ran out");
                 }
                 netPosition.Value = base.transform.position;
                 netRotation.Value = base.transform.eulerAngles;
@@ -239,7 +236,7 @@ namespace PummelCustomItems
 
             if (actor != null && m_spec.ExplodeOnActorHit && base.IsOwner)
             {
-                OwnerExplode();
+                OwnerExplode("hit an actor");
                 return;
             }
 
@@ -250,7 +247,7 @@ namespace PummelCustomItems
                 ModAssets.Play(m_spec.BounceSound, 0.4f);
 
                 if (m_spec.MaxBounces >= 0 && m_bounces > m_spec.MaxBounces && base.IsOwner)
-                    OwnerExplode();
+                    OwnerExplode("out of bounces");
             }
         }
 
@@ -269,7 +266,7 @@ namespace PummelCustomItems
             {
                 BoardActor actor = m_hits[i].gameObject.GetComponentInParent<BoardActor>();
                 if (actor == null || actor.LocalHealth <= 0) continue;
-                if (IsSelfDuringGrace(actor)) continue;
+                if (IsThrower(actor)) continue;
                 if (IsProtectedTeammate(actor)) continue;
 
                 if (m_spec.StickToActor && m_stuckTo == null)
@@ -278,15 +275,24 @@ namespace PummelCustomItems
                     return false;   // it rides along; the fuse still decides when it goes off
                 }
 
-                OwnerExplode();
+                OwnerExplode("proximity");
                 return true;
             }
             return false;
         }
 
-        private bool IsSelfDuringGrace(BoardActor actor)
+        /// <summary>
+        /// Your own throw never hurts you.
+        ///
+        /// This used to be a 0.35 second grace window, which only ever solved half the
+        /// problem: it stopped the projectile detonating inside the thrower the instant it
+        /// left their hand, but a grenade that bounced back was free to hurt them a second
+        /// later, and fragments - same owner, but each starting its own clock - sailed past
+        /// the window entirely. Whose throw it was does not change while it is in the air,
+        /// so neither should this.
+        /// </summary>
+        private bool IsThrower(BoardActor actor)
         {
-            if (m_age >= SelfGrace) return false;
             if (m_thrower == null || m_thrower.BoardObject == null) return false;
             return actor == (BoardActor)m_thrower.BoardObject;
         }
@@ -307,9 +313,17 @@ namespace PummelCustomItems
 
         // ------------------------------------------------------------------- blast
 
-        private void OwnerExplode()
+        /// <summary>
+        /// <paramref name="reason"/> and the armed time are logged together: a frag grenade
+        /// went off at roughly half its fuse and nothing in the spec could account for it,
+        /// so the next run should say plainly which trigger fired and what the clock read.
+        /// </summary>
+        private void OwnerExplode(string reason)
         {
             if (m_dead) return;
+
+            Core.Log("Projectile(" + m_kind + "): " + reason + " after " + m_age.ToString("F2") +
+                     "s armed (fuse " + m_spec.Fuse.ToString("F2") + "s, bounces " + m_bounces + ")");
 
             List<byte> victims = new List<byte>();
             List<byte> damage = new List<byte>();
@@ -326,7 +340,7 @@ namespace PummelCustomItems
                     BoardActor actor = m_hits[i].gameObject.GetComponentInParent<BoardActor>();
                     if (actor == null || actor.LocalHealth <= 0) continue;
                     if (!seen.Add(actor.ActorID)) continue;
-                    if (IsSelfDuringGrace(actor)) continue;
+                    if (IsThrower(actor)) continue;
                     if (IsProtectedTeammate(actor)) continue;
 
                     victims.Add(actor.ActorID);
