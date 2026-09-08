@@ -329,7 +329,7 @@ namespace PummelCustomItems
     public class VacuumItem : AimedItem
     {
         private const float Reach = 7.5f;
-        private const float HalfAngle = 45f;   // 90-degree wedge in front of the player
+        private const float HalfAngle = 31.5f;   // 63-degree wedge in front of the player
 
         protected override float IndicatorReach { get { return Reach; } }
         protected override float IndicatorHalfAngle { get { return HalfAngle; } }

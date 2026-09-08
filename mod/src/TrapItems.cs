@@ -300,12 +300,19 @@ namespace PummelCustomItems
                 List<BoardNode> choices = __instance.NodeChoices;
                 if (choices == null || choices.Count < 2) return;
 
-                // Deliberately never the chosen one - a fake signpost that sometimes tells
-                // the truth is just noise.
-                int picked = UnityEngine.Random.Range(0, choices.Count - 1);
-                if (picked >= direction) picked++;
+                // Every branch is equally likely, the one that was picked included.
+                //
+                // It used to exclude the chosen branch on the grounds that a signpost which
+                // sometimes tells the truth is just noise. That reasoning does not survive
+                // contact with the board: forks here have two ways out, so "never the one you
+                // picked" is "always the other one" - perfectly predictable, and a trap you
+                // can plan around is not a trap. Being unable to trust it is the whole point.
+                int picked = UnityEngine.Random.Range(0, choices.Count);
 
-                Core.Log("FakeSignpost: " + direction + " -> " + picked);
+                Core.Log("FakeSignpost: " + direction + " -> " + picked +
+                         " (of " + choices.Count + ")");
+
+                if (picked == direction) return;   // it happened to agree; say nothing
                 direction = picked;
 
                 DiceOverride.Announce(__instance, "Не туда!");

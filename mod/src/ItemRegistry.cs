@@ -256,7 +256,7 @@ namespace PummelCustomItems
                 "PCI_I_DoubleMove", typeof(DoubleMoveItem), "DoubleDice", 0.8f, 2.4f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 22, "Крюк-кошка",
-                "Наводится на игрока и подтягивает его почти вплотную к тебе.",
+                "Бьёт по прямой на большое расстояние и подтягивает пойманного игрока почти вплотную к тебе.",
                 "PCI_I_Grapple", typeof(GrappleItem), "Grapple", 0.8f, 2.4f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 23, "Пинок",

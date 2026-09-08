@@ -11,7 +11,7 @@ namespace PummelCustomItems
     public abstract class TargetedItem : AimedItem
     {
         protected virtual float Reach { get { return 9f; } }
-        protected virtual float HalfAngle { get { return 40f; } }
+        protected virtual float HalfAngle { get { return 28f; } }
 
         protected abstract void Affect(BoardPlayer target);
         protected virtual string MissLabel { get { return "Мимо"; } }
@@ -47,6 +47,42 @@ namespace PummelCustomItems
                 if (dist <= Reach) return new ItemAIUse(gp.BoardObject, Mathf.Clamp01(1f - dist / Reach));
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Aimed along a lane instead of across a wedge: whoever is standing in the line gets it,
+    /// nearest first.
+    ///
+    /// A wedge suits something that sweeps - a vacuum, a magnet. A grappling hook is thrown at
+    /// one person a long way off, and a wedge models that badly: it is generous up close, where
+    /// the arc is narrow in absolute terms, and absurdly wide at range. A lane is the same
+    /// width wherever the target stands, which is what "I am aiming at that player" means.
+    /// </summary>
+    public abstract class BeamTargetedItem : AimedItem
+    {
+        protected virtual float Reach { get { return 20f; } }
+        protected virtual float HalfWidth { get { return 1.7f; } }
+
+        protected abstract void Affect(BoardPlayer target);
+        protected virtual string MissLabel { get { return "Мимо"; } }
+
+        protected override float IndicatorReach { get { return Reach; } }
+        protected override float IndicatorHalfWidth { get { return HalfWidth; } }
+        protected override float AiRange { get { return Reach; } }
+
+        protected override void PerformAimed(Vector3 dir)
+        {
+            BoardPlayer target = PickAlongLine(dir, Reach, HalfWidth);
+
+            if (target == null)
+            {
+                DiceOverride.Announce(player.BoardObject, MissLabel);
+                Core.Log(GetType().Name + ": nobody in the line");
+                return;
+            }
+
+            Affect(target);
         }
     }
 
@@ -113,7 +149,7 @@ namespace PummelCustomItems
     {
         private const float DrainShare = 0.30f;
         protected override float Reach { get { return 8.5f; } }
-        protected override float HalfAngle { get { return 45f; } }
+        protected override float HalfAngle { get { return 31.5f; } }
 
         protected override void Affect(BoardPlayer target)
         {
@@ -145,7 +181,7 @@ namespace PummelCustomItems
     // ------------------------------------------------------------------ displacement
 
     /// <summary>Drags the target most of the way to you.</summary>
-    public class GrappleItem : TargetedItem
+    public class GrappleItem : BeamTargetedItem
     {
         protected override void Affect(BoardPlayer target)
         {

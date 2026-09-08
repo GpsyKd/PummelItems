@@ -23,6 +23,9 @@ namespace PummelCustomItems
         protected virtual float IndicatorReach { get { return 0f; } }
         protected virtual float IndicatorHalfAngle { get { return 0f; } }
 
+        /// <summary>Non-zero for items that reach along a lane rather than sweeping an arc.</summary>
+        protected virtual float IndicatorHalfWidth { get { return 0f; } }
+
         /// <summary>
         /// Non-null for items that fly a ballistic arc worth previewing. Where a lobbed item
         /// comes down is the question the player actually has, and an arrow cannot answer it.
@@ -32,6 +35,7 @@ namespace PummelCustomItems
         private Vector3 m_aim = Vector3.forward;
         private AimArrow m_arrow;
         private SectorIndicator m_sector;
+        private BeamIndicator m_beam;
         private TrajectoryArc m_arc;
 
         public override void Setup()
@@ -47,6 +51,8 @@ namespace PummelCustomItems
 
                 if (arc != null)
                     m_arc = TrajectoryArc.Create(tint, arc);
+                else if (IndicatorReach > 0f && IndicatorHalfWidth > 0f)
+                    m_beam = BeamIndicator.Create(tint, IndicatorReach, IndicatorHalfWidth);
                 else if (IndicatorReach > 0f)
                     m_sector = SectorIndicator.Create(tint, IndicatorReach, IndicatorHalfAngle);
                 else
@@ -78,6 +84,7 @@ namespace PummelCustomItems
                 Vector3 from = player.BoardObject.transform.position;
                 if (m_arrow != null) m_arrow.Aim(from, m_aim);
                 if (m_sector != null) m_sector.Aim(from, m_aim);
+                if (m_beam != null) m_beam.Aim(from, m_aim);
                 if (m_arc != null) m_arc.Aim(from, m_aim);
             }
             else
@@ -90,6 +97,7 @@ namespace PummelCustomItems
         {
             if (m_arrow != null) { m_arrow.Dismiss(); m_arrow = null; }
             if (m_sector != null) { m_sector.Dismiss(); m_sector = null; }
+            if (m_beam != null) { m_beam.Dismiss(); m_beam = null; }
             if (m_arc != null) { m_arc.Dismiss(); m_arc = null; }
         }
 
@@ -149,6 +157,38 @@ namespace PummelCustomItems
                 if (Vector3.Angle(dir, delta) > halfAngle) continue;
 
                 if (dist < bestDist) { bestDist = dist; best = gp.BoardObject; }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// The nearest opponent standing in a lane of the given width ahead of the player.
+        /// Distance along the aim decides who is first; distance to the side decides whether
+        /// they are in it at all.
+        /// </summary>
+        protected BoardPlayer PickAlongLine(Vector3 dir, float reach, float halfWidth)
+        {
+            BoardPlayer me = player.BoardObject;
+            BoardPlayer best = null;
+            float bestAlong = float.MaxValue;
+
+            dir = dir.normalized;
+
+            for (int i = 0; i < GameManager.PlayerCount; i++)
+            {
+                GamePlayer gp = GameManager.GetPlayerAt(i);
+                if (gp == null || gp.BoardObject == null || gp.BoardObject == me) continue;
+                if (gp.BoardObject.LocalHealth <= 0) continue;
+                if (IsActorATeammateThatShouldBeIgnored(gp.BoardObject, player)) continue;
+
+                Vector3 delta = gp.BoardObject.transform.position - me.transform.position;
+                delta.y = 0f;
+
+                float along = Vector3.Dot(delta, dir);
+                if (along <= 0f || along > reach) continue;               // behind, or too far
+                if ((delta - dir * along).magnitude > halfWidth) continue; // off to the side
+
+                if (along < bestAlong) { bestAlong = along; best = gp.BoardObject; }
             }
             return best;
         }

@@ -136,6 +136,91 @@ namespace PummelCustomItems
     }
 
     /// <summary>
+    /// Ground strip showing the lane an item reaches along: as long as its range, as wide as
+    /// it will actually catch somebody.
+    ///
+    /// A wedge is the honest picture for something that sweeps an arc, but for a line item it
+    /// would promise reach to the sides that does not exist, and hide how far forward it goes.
+    /// The marker has to be the shape of the rule it is drawing.
+    /// </summary>
+    internal class BeamIndicator : MonoBehaviour
+    {
+        private Material m_mat;
+
+        internal static BeamIndicator Create(Color color, float reach, float halfWidth)
+        {
+            GameObject host = new GameObject("PCI_Beam");
+            BeamIndicator b = host.AddComponent<BeamIndicator>();
+            b.Build(color, reach, halfWidth);
+            return b;
+        }
+
+        private void Build(Color color, float reach, float halfWidth)
+        {
+            // Flat on the ground, running along +Z, which is the aim direction.
+            Vector3[] verts =
+            {
+                new Vector3(-halfWidth, 0f, 0f),
+                new Vector3( halfWidth, 0f, 0f),
+                new Vector3(-halfWidth, 0f, reach),
+                new Vector3( halfWidth, 0f, reach),
+            };
+            int[] tris = { 0, 2, 1, 1, 2, 3 };
+
+            // Brightest at the player, fading out towards the far end, so which way it points
+            // is obvious without an arrowhead.
+            Color[] cols =
+            {
+                new Color(color.r, color.g, color.b, 1f),
+                new Color(color.r, color.g, color.b, 1f),
+                new Color(color.r, color.g, color.b, 0.25f),
+                new Color(color.r, color.g, color.b, 0.25f),
+            };
+
+            Mesh mesh = new Mesh { name = "PCI_BeamMesh" };
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.colors = cols;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+            MeshRenderer mr = gameObject.AddComponent<MeshRenderer>();
+
+            Shader sh = Effects.UnlitShader();
+            m_mat = (sh != null) ? new Material(sh) : null;
+            if (m_mat != null)
+            {
+                m_mat.color = new Color(color.r, color.g, color.b, 0.36f);
+                mr.material = m_mat;
+            }
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+            mr.sortingOrder = 10;
+        }
+
+        internal void Aim(Vector3 origin, Vector3 direction)
+        {
+            transform.position = origin + Vector3.up * 0.14f;
+            if (direction.sqrMagnitude > 0.001f)
+                transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+        }
+
+        internal void Dismiss()
+        {
+            if (this != null) Destroy(gameObject);
+        }
+
+        private void Update()
+        {
+            if (m_mat == null) return;
+            Color c = m_mat.color;
+            c.a = 0.28f + 0.14f * Mathf.Sin(Time.time * 5f);
+            m_mat.color = c;
+        }
+    }
+
+    /// <summary>
     /// Ground arrow showing where a thrown item will go. Without it the player is aiming
     /// blind - the direction was always being read, there was just nothing to look at.
     /// </summary>

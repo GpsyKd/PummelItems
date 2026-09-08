@@ -5,7 +5,7 @@ using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(PummelCustomItems.Core), "PummelCustomItems", "0.46.0", "local")]
+[assembly: MelonInfo(typeof(PummelCustomItems.Core), "PummelCustomItems", "0.48.0", "local")]
 [assembly: MelonGame("Rebuilt Games", "Pummel Party")]
 
 namespace PummelCustomItems
