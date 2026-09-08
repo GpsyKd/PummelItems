@@ -12,7 +12,7 @@
 set -euo pipefail
 
 MELON_URL="https://github.com/LavaGang/MelonLoader/releases/download/v0.7.3/MelonLoader.x64.zip"
-MOD_URL="https://github.com/GpsyKd/PummelItems/releases/latest/download/PummelItems-v0.46.zip"
+MOD_REPO="GpsyKd/PummelItems"
 
 say()  { printf '\n\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m  ! %s\033[0m\n' "$*"; }
@@ -74,6 +74,13 @@ else
     say "Installing MelonLoader"
     unpack "$TMP/melon.zip" "$GAME"
 fi
+
+# Ask which asset the newest release actually carries, rather than guessing its filename.
+# Pinning the name meant every version bump silently broke this script.
+say "Finding the latest PummelItems release"
+MOD_URL="$(curl -sfL "https://api.github.com/repos/$MOD_REPO/releases/latest"            | grep -o '"browser_download_url"[^,]*\.zip"' | head -1 | cut -d'"' -f4 || true)"
+[ -n "$MOD_URL" ] || die "No release asset found. Is a release published with a .zip attached?"
+echo "    $(basename "$MOD_URL")"
 
 fetch "$MOD_URL" "$TMP/mod.zip" "PummelItems"
 say "Installing PummelItems"
