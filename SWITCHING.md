@@ -34,8 +34,18 @@ From then on Pummel Party asks every time it starts:
 | **С модом** | our items, for local play |
 | **Без мода** | the stock game, for playing online |
 
-Tap one, or leave it, and after five seconds it starts the way it did last time. There is still
-one Pummel Party in the library.
+Tap one on the screen, or leave it, and after ten seconds it starts the way it did last time.
+There is still one Pummel Party in the library.
+
+In Game Mode the screen belongs to gamescope, which shows only windows marked as part of the
+game being played - an ordinary dialog runs there unseen. The launcher marks its question with
+the game's id (the `STEAM_GAME` window property), so it appears over the game's start-up.
+Every launch is logged in `~/.local/share/pummelitems/launch.log`: which mode was chosen, how,
+and whether the question could be shown.
+
+Steam's own "choose a launch option" menu is not used on purpose: it lists only the launch
+options the game's developer registered with Steam, and an extra one added to Steam's cache by
+hand is silently dropped whenever Steam refreshes the game's details.
 
 "Без мода" is genuinely stock: the launcher does not set the one setting that lets Proton load
 MelonLoader's `version.dll`, so MelonLoader never starts at all.
