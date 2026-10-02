@@ -86,8 +86,6 @@ fetch "$MOD_URL" "$TMP/mod.zip" "PummelItems"
 say "Installing PummelItems"
 unpack "$TMP/mod.zip" "$GAME"
 
-chmod +x "$GAME/switch-mod.sh" 2>/dev/null || true
-
 # ---------------------------------------------------------------- the launch choice
 
 # One game in the library, with the choice made as it starts: deck/picker.py, a menu in the

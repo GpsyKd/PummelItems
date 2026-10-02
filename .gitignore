@@ -23,6 +23,7 @@ unity/build.log
 unity/iconpreview.log
 unity/iconzoom.log
 mod/bin/
+launcher/bin/
 mod/obj/
 
 # Icon review sheets: rendered on demand from the models, no reason to keep versions of them.

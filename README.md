@@ -34,36 +34,43 @@ Item names and descriptions are in Russian in-game.
 
 ## Install
 
-1. Install [MelonLoader](https://melonloader.co/) into the game folder and run the game once
-   so it sets itself up.
-2. Download the archive from the [releases page](../../releases) and extract it **into the
-   game folder**. It is laid out to match, so the mod, its assets and the switch scripts all
-   land where they belong:
+**On Windows** one command in PowerShell does all of it, MelonLoader included:
 
 ```
-<game>/
-  Mods/PummelCustomItems.dll
-  UserData/PummelCustomItems/pciassets
-  Play Modded.bat, Play Vanilla.bat, switch-mod.ps1, find-game.ps1
+[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; irm https://raw.githubusercontent.com/GpsyKd/PummelItems/main/install-windows.ps1 | iex
 ```
 
-**On a Steam Deck** one command in Konsole does all of it, MelonLoader included:
+**On a Steam Deck** one command in Konsole (Desktop Mode) does the same:
 
 ```
 curl -sL https://raw.githubusercontent.com/GpsyKd/PummelItems/main/install-deck.sh | bash
 ```
 
-It also sets up a launch menu in the style of Steam's own - play with the mod, without it, or
-cancel - shown every time the game starts, so there is still one Pummel Party in the library.
-Details in [SWITCHING.md](SWITCHING.md).
+Both find the game wherever Steam put it, and run again to update. At the end each prints one
+line to paste into Steam: Pummel Party → Properties → **Launch Options**. From then on the game
+asks, every time it starts, in the style of Steam's own launch-option menu: play with the mod,
+without it, or cancel - with the mouse, the keyboard, a controller or the touchscreen. There
+is still one Pummel Party in the library. Details in [SWITCHING.md](SWITCHING.md).
 
-Building it yourself instead is described below.
+By hand instead: install [MelonLoader](https://melonloader.co/) 0.7.3, run the game once, and
+extract the archive from the [releases page](../../releases) **into the game folder** - it is
+laid out to match:
+
+```
+<game>/
+  Mods/PummelCustomItems.dll
+  UserData/PummelCustomItems/pciassets
+  PummelItemsLauncher.exe
+```
+
+then set the launch options to `"<game>\PummelItemsLauncher.exe" %command%`.
+
+Building it yourself is described below.
 
 ## Playing online
 
-**With people who do not have the mod: turn it off first.** On Windows that is
-`Play Vanilla.bat`; on a Steam Deck, "Играть без мода" in the menu as the game starts. Neither
-uninstalls anything. You cannot get this wrong by accident: the mod adds itself to the game's
+**With people who do not have the mod: turn it off first** - "Играть без мода" in the menu
+as the game starts, on Windows and on the Deck alike. Nothing is uninstalled. You cannot get this wrong by accident: the mod adds itself to the game's
 version number, and the game refuses to mix modded and stock players, showing its ordinary
 "version mismatch" message.
 
@@ -93,6 +100,10 @@ every material looks.
 `IconPreview.RenderSheet` renders every icon into one contact sheet without launching the
 game, using the game's own icon camera, lights and ambient - it matches the real icons
 closely, but the final word is the PNGs the game caches in `UserData/PummelCustomItems/icons/`.
+
+**The launch menus.** `launcher/build.ps1` builds `PummelItemsLauncher.exe` for Windows with the
+same compiler. The Deck's menu is `deck/picker.py`, plain Python on libX11; its lettering is
+pre-rendered by `deck/make-picker-art.ps1`, because the Deck has no fonts it could use.
 
 `PoseStudio` shows how items sit in the hand: create `UserData/PummelCustomItems/pose_studio.on`
 and the mod renders a player holding every item into `pose_sheet.png` next to it - on a board

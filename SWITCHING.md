@@ -63,26 +63,31 @@ How it works, for when it does not:
 
 ## Windows
 
-Windows has no launch wrapper like that, so the switch is MelonLoader's own off switch:
-`UserData/Loader.cfg`, under `[loader]`, has `disable = false`, and `true` makes MelonLoader stop
-before it loads anything of ours. The scripts flip that one line - nothing is renamed, moved or
-reinstalled, so there is no half-switched state to end up in.
-
-Two files in the game folder, one click each:
-
-| File | What it does |
-| --- | --- |
-| `Play Modded.bat` | turns the mod on and starts the game |
-| `Play Vanilla.bat` | turns it off and starts the stock game |
-
-Put shortcuts to them wherever is convenient - desktop, taskbar, Start menu. Or drive the
-switch directly:
+Install or update with one command in PowerShell:
 
 ```
-powershell -File switch-mod.ps1            # which mode am I in?
-powershell -File switch-mod.ps1 vanilla    # switch, do not launch
-powershell -File switch-mod.ps1 toggle -Launch
+[Net.ServicePointManager]::SecurityProtocol = 'Tls12'; irm https://raw.githubusercontent.com/GpsyKd/PummelItems/main/install-windows.ps1 | iex
 ```
 
-The scripts find the game themselves from Steam's own list of library folders, whichever drive
-it is on.
+Then, once, in Steam: Pummel Party → right click → Properties → **Launch Options**, and paste
+the line the installer prints (it also puts it on the clipboard), which looks like
+
+```
+"D:\SteamLibrary\steamapps\common\Pummel Party\PummelItemsLauncher.exe" %command%
+```
+
+From then on the same menu as on the Deck comes up whenever the game starts: **Играть с
+модом**, **Играть без мода**, **Отмена** - in Russian when Windows is, in English otherwise.
+Arrows and Enter, the mouse, or a controller's D-pad and A; B or Escape backs out. Left alone,
+it starts the way it did last time when the countdown runs out.
+
+- **With the mod**, it makes sure MelonLoader's own off switch (`disable` in
+  `UserData/Loader.cfg`) is off - the old `Play Vanilla.bat` used to leave it on - and starts
+  the game.
+- **Without the mod**, it passes the game MelonLoader's `--no-mods`, and MelonLoader stops
+  before loading anything; it does not even write a log. Nothing on disk changes.
+
+The launcher waits for the game to close, so Steam sees the game as running the whole time
+and syncs the cloud after it, not before. Its log is `UserData/PummelCustomItems/launcher.log`.
+
+The old `Play Modded.bat` / `Play Vanilla.bat` are gone; the installer removes them.
