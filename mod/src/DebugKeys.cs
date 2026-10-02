@@ -5,16 +5,24 @@ namespace PummelCustomItems
 {
     /// <summary>
     /// Debug-only shortcuts. Board items are normally handed out by the board,
-    /// which makes testing a specific item slow.
+    /// which makes testing a specific item slow. All of them need Ctrl+Shift held, so a
+    /// stray F-key in a real game with friends does nothing.
     ///
-    ///   F8  - hurt the local player by 10 (so healing is visible)
-    ///   F9  - give the local player one Shuffle
-    ///   F10 - log the current enabled-item table
+    ///   Ctrl+Shift+F7  - show everybody's health
+    ///   Ctrl+Shift+F8  - hurt the local player by 10 (so healing is visible)
+    ///   Ctrl+Shift+F9  - give the local player one of every custom item (host only)
+    ///   Ctrl+Shift+F10 - log the current enabled-item table
     /// </summary>
     internal static class DebugKeys
     {
+        internal const string Help = "Ctrl+Shift + F7 = show health, F8 = hurt self, F9 = give all items, F10 = log items";
+
         internal static void Update()
         {
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (!ctrl || !shift) return;
+
             if (Input.GetKeyDown(KeyCode.F7)) ShowHealth();
             if (Input.GetKeyDown(KeyCode.F8)) HurtSelf();
             if (Input.GetKeyDown(KeyCode.F9)) GiveCustomItem();

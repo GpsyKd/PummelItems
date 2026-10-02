@@ -577,6 +577,34 @@ namespace PummelCustomItems
 
         // -------------------------------------------------------------------- details
 
+        /// <summary>Every item that has a model for the hand, keyed as held_poses.txt keys them.</summary>
+        internal static List<KeyValuePair<string, ItemDetails>> HeldItems()
+        {
+            List<KeyValuePair<string, ItemDetails>> list = new List<KeyValuePair<string, ItemDetails>>();
+            for (int i = 0; i < s_defs.Count; i++)
+            {
+                ItemDetails d;
+                if (s_details.TryGetValue(s_defs[i].Id, out d) && d != null && d.heldPrefab != null)
+                    list.Add(new KeyValuePair<string, ItemDetails>(s_defs[i].PrefabName, d));
+            }
+            return list;
+        }
+
+        /// <summary>Puts the declared poses back, then whatever held_poses.txt says on top.</summary>
+        internal static void ReapplyHeldPoses()
+        {
+            for (int i = 0; i < s_defs.Count; i++)
+            {
+                ItemDetails d;
+                if (!s_details.TryGetValue(s_defs[i].Id, out d) || d == null) continue;
+                d.heldBone = s_defs[i].HeldBone;
+                d.heldPosition = s_defs[i].HeldPosition;
+                d.heldRotation = s_defs[i].HeldRotation;
+                d.heldScale = s_defs[i].HeldScale;
+                HeldPoses.ApplyTo(s_defs[i].PrefabName, d);
+            }
+        }
+
         private static ItemDetails GetOrCreateDetails(CustomItemDef def)
         {
             ItemDetails d;
@@ -619,6 +647,7 @@ namespace PummelCustomItems
             d.heldPosition = def.HeldPosition;
             d.heldRotation = def.HeldRotation;
             d.heldScale = def.HeldScale;
+            HeldPoses.ApplyTo(def.PrefabName, d);   // the tuned pose, where there is one
 
             d.iconSize = new Vector2(def.IconSize, def.IconSize);
             d.inputHelp = MakeInputHelp(aiming: true);
@@ -695,19 +724,23 @@ namespace PummelCustomItems
                 string tag = Mathf.RoundToInt(model.transform.localScale.x * 100f) + "_" +
                              Mathf.RoundToInt(e.x) + "-" + Mathf.RoundToInt(e.y) + "-" + Mathf.RoundToInt(e.z);
                 // Rendered icons are cached to disk, so anything that changes how a model
-                // LOOKS - not just its size - has to invalidate them. Bumping this is how
-                // the magenta icons baked before the shader rebind get thrown away.
-                const int IconCacheVersion = 2;
+                // LOOKS - not just its size - has to invalidate them. The bundle's own hash
+                // does that for model changes; IconCacheVersion is for changes to how icons
+                // are rendered.
+                string bundle = ModAssets.BundleTag;
+                DropStaleIcons(dir, bundle);
 
                 string file = Path.Combine(dir,
-                    model.name + "_v" + IconCacheVersion + "_" + tag + ".png");
+                    model.name + "_v" + IconCacheVersion + "_" + tag + "_" + bundle + ".png");
 
                 if (!File.Exists(file))
                 {
+                    LogIconEnvironment(dir);
+
                     // The renderer needs a live object; ours lives in the inactive attic.
                     GameObject shot = UnityEngine.Object.Instantiate(model);
                     shot.SetActive(true);
-                    try { PummelTargetRenderer.Render(file, 256, 256, new GameObject[] { shot }); }
+                    try { RenderWithFill(file, 256, shot); }
                     finally { UnityEngine.Object.Destroy(shot); }
                 }
 
@@ -744,8 +777,157 @@ namespace PummelCustomItems
             }
         }
 
-        /// <summary>The on-screen prompt while the item is equipped. Null here means the
-        /// player sees no "use item" hint at all.</summary>
+        // Ambient light for the length of an icon render, standing in for the fill light the
+        // renderer does not have: the menu scene it runs in has next to none (0.04), so whatever
+        // its lights missed came out black.
+        private static readonly Color IconFill = new Color(0.32f, 0.33f, 0.36f);
+
+        /// <summary>
+        /// PummelTargetRenderer, with an ambient fill and without shadows. Its three lights all
+        /// cast soft shadows, one with no normal bias, so curved surfaces came out striped with
+        /// shadow acne and small parts darkened each other - a whole picture of shadow at 80
+        /// pixels. Both settings are the scene's own again as soon as the icon is drawn.
+        /// </summary>
+        private static void RenderWithFill(string file, int size, GameObject shot)
+        {
+            UnityEngine.Rendering.AmbientMode mode = RenderSettings.ambientMode;
+            Color flat = RenderSettings.ambientLight;
+            float intensity = RenderSettings.ambientIntensity;
+            UnityEngine.Rendering.SphericalHarmonicsL2 probe = RenderSettings.ambientProbe;
+            ShadowQuality shadows = QualitySettings.shadows;
+            try
+            {
+                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+                RenderSettings.ambientLight = IconFill;
+                RenderSettings.ambientIntensity = 1f;
+                QualitySettings.shadows = ShadowQuality.Disable;
+                PummelTargetRenderer.Render(file, size, size, new GameObject[] { shot });
+            }
+            finally
+            {
+                QualitySettings.shadows = shadows;
+                RenderSettings.ambientMode = mode;
+                RenderSettings.ambientLight = flat;
+                RenderSettings.ambientIntensity = intensity;
+                RenderSettings.ambientProbe = probe;
+            }
+        }
+
+        private static bool s_envLogged;
+
+        /// <summary>
+        /// What the icon renderer works in. It switches every scene light off and adds one of its
+        /// own, but the ambient light, reflections, colour space and its camera prefab - which
+        /// brings lights of its own - come from the game, and between them they decide how dark
+        /// an icon comes out. Logged once per run, so icons can be matched outside the game.
+        /// </summary>
+        private static void LogIconEnvironment(string dir)
+        {
+            if (s_envLogged) return;
+            s_envLogged = true;
+            try
+            {
+                Vector3[] dirs = { Vector3.up, new Vector3(-0.5f, 0.6f, 1f).normalized, Vector3.right, Vector3.down };
+                Color[] amb = new Color[dirs.Length];
+                RenderSettings.ambientProbe.Evaluate(dirs, amb);
+
+                string cam = "not found";
+                GameObject prefab = UnityEngine.AddressableAssets.Addressables
+                    .LoadAssetAsync<GameObject>("PreviewRenderCamera").WaitForCompletion();
+                if (prefab != null)
+                {
+                    Camera c = prefab.GetComponentInChildren<Camera>(true);
+                    cam = (c == null) ? "no camera" : "fov " + c.fieldOfView + " hdr " + c.allowHDR + " path " + c.renderingPath;
+                    foreach (Light l in prefab.GetComponentsInChildren<Light>(true))
+                        cam += ", light " + l.type + " " + l.intensity + " " + l.color + " at " + l.transform.localEulerAngles +
+                               " shadows " + l.shadows;
+                    foreach (Component k in prefab.GetComponentsInChildren<Component>(true))
+                        if (k != null) cam += ", " + k.GetType().Name;
+                }
+
+                Core.Log("icon render environment: " + QualitySettings.activeColorSpace + " colour space; ambient " +
+                         RenderSettings.ambientMode + " x" + RenderSettings.ambientIntensity +
+                         " (up " + amb[0] + ", towards camera " + amb[1] + ", side " + amb[2] + ", down " + amb[3] + "); reflections " +
+                         RenderSettings.defaultReflectionMode + " x" + RenderSettings.reflectionIntensity + ", skybox " +
+                         (RenderSettings.skybox != null ? RenderSettings.skybox.shader.name : "none") + "; shadows " +
+                         QualitySettings.shadows + " to " + QualitySettings.shadowDistance + " m in " + QualitySettings.shadowCascades +
+                         " cascade(s); camera " + cam + "; scene " + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
+                         "; emission " + EmissionTest(dir));
+            }
+            catch (Exception e)
+            {
+                Core.Warn("icon environment log failed: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Whether a glowing material glows at all here: a black ball lit only from inside, drawn
+        /// by the icon renderer. Unity drops shader variants no material in a build asked for,
+        /// and if the game never shipped Standard with _EMISSION, nothing of ours glows.
+        /// </summary>
+        private static string EmissionTest(string dir)
+        {
+            string file = Path.Combine(dir, "_emission_test.png");
+            GameObject ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            try
+            {
+                Material m = new Material(Shader.Find("Standard"));
+                m.color = Color.black;
+                m.SetFloat("_Glossiness", 0f);
+                m.EnableKeyword("_EMISSION");
+                m.SetColor("_EmissionColor", Color.white);
+                ball.GetComponent<Renderer>().sharedMaterial = m;
+
+                PummelTargetRenderer.Render(file, 16, 16, new GameObject[] { ball });
+                Texture2D t = new Texture2D(2, 2);
+                if (!File.Exists(file) || !t.LoadImage(File.ReadAllBytes(file))) return "untested";
+                Color centre = t.GetPixel(8, 8);
+                UnityEngine.Object.Destroy(t);
+                return (centre.grayscale > 0.5f ? "works" : "DOES NOT WORK") + " (centre " + centre + ")";
+            }
+            catch (Exception e)
+            {
+                return "test failed: " + e.Message;
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(ball);
+                try { File.Delete(file); } catch { }
+            }
+        }
+
+        // 4: rendered with an ambient fill and without shadows (RenderWithFill).
+        private const int IconCacheVersion = 4;
+
+        private static bool s_staleIconsDropped;
+
+        /// <summary>
+        /// Removes cached icons rendered from a different bundle. Once per run; they would
+        /// never be read again, and every model rebuild would otherwise leave 29 behind.
+        /// </summary>
+        private static void DropStaleIcons(string dir, string bundle)
+        {
+            if (s_staleIconsDropped) return;
+            s_staleIconsDropped = true;
+
+            try
+            {
+                string keep = "_" + bundle + ".png", version = "_v" + IconCacheVersion + "_";
+                int removed = 0;
+                foreach (string f in Directory.GetFiles(dir, "*.png"))
+                {
+                    if (f.EndsWith(keep, StringComparison.OrdinalIgnoreCase) && Path.GetFileName(f).Contains(version)) continue;
+                    File.Delete(f);
+                    removed++;
+                }
+                if (removed > 0) Core.Log("icon cache: removed " + removed + " icon(s) from older bundles or renders");
+            }
+            catch (Exception e)
+            {
+                Core.Warn("icon cache cleanup failed: " + e.Message);
+            }
+        }
+
         /// <summary>Smallest square rect containing every pixel that is not transparent.</summary>
         private static Rect OpaqueBounds(Texture2D tex)
         {
@@ -784,6 +966,8 @@ namespace PummelCustomItems
             return new Rect(x0, y0, side, side);
         }
 
+        /// <summary>The on-screen prompt while the item is equipped. Null here means the
+        /// player sees no "use item" hint at all.</summary>
         private static InputHelp MakeInputHelp(bool aiming)
         {
             // GameUIController.SetBoardInputHelp() walks inputHelp.controller BEFORE

@@ -63,7 +63,7 @@ public static class IconPreview
     {
         int rows = Mathf.CeilToInt(paths.Count / (float)Cols);
         Texture2D sheet = new Texture2D(Cols * Cell, rows * Cell, TextureFormat.RGBA32, false);
-        Fill(sheet, new Color(0.62f, 0.64f, 0.66f, 1f));
+        Fill(sheet, Backdrop);
 
         GameObject rig = new GameObject("PCI_PreviewRig");
         Camera cam = BuildCamera(rig);
@@ -133,54 +133,84 @@ public static class IconPreview
         return paths;
     }
 
+    // ------------------------------------------------------------------ the game's icon setup
+    //
+    // Replicates how the game itself renders an item icon, as measured in the game on
+    // 2026-10-02 (AUDIT-RESULTS.md, section 6). A replica built this way matched the real
+    // icons to within about 7/255 of mean brightness - close enough to judge a model by,
+    // which the previous orthographic, extra-fill-light version was not: it flattered every
+    // model, so the inventory looked worse than the preview.
+
+    private const float GameFov = 60f;
+
+    /// <summary>The background the icon tiles sit on in the README sheet.</summary>
+    private static readonly Color Backdrop = new Color(0.204f, 0.216f, 0.247f, 1f);
+
+    /// <summary>
+    /// Which way the game looks at an icon: PreviewRendererCam puts its camera at
+    /// center + normalize(offset) * distance and aims back, with offset defaulting to
+    /// (-0.5, 0.6, 1). So the +Z face is the one that ends up on screen, seen from slightly
+    /// above and to the left.
+    /// </summary>
+    private static readonly Vector3 GameCamOffset = new Vector3(-0.5f, 0.6f, 1f);
+
     private static Camera BuildCamera(GameObject rig)
     {
         GameObject go = new GameObject("Cam");
         go.transform.SetParent(rig.transform, false);
 
         Camera cam = go.AddComponent<Camera>();
-        cam.orthographic = true;
+        cam.orthographic = false;
+        cam.fieldOfView = GameFov;
+        cam.allowHDR = true;
         cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.62f, 0.64f, 0.66f, 1f);
+        cam.backgroundColor = Backdrop;
         cam.nearClipPlane = 0.01f;
         cam.farClipPlane = 200f;
+
+        // The PreviewRenderCamera prefab carries two directional lights of its own as children,
+        // so they turn with the camera.
+        AddLight(go.transform, "CamKey", Quaternion.Euler(45f, 45f, 0f), Color.white, 1f, local: true);
+        AddLight(go.transform, "CamRim", Quaternion.Euler(315f, 225f, 0f), new Color(0.79f, 0.92f, 1f), 1f, local: true);
         return cam;
     }
 
-    /// <summary>
-    /// Which way the game looks at an icon: PreviewRendererCam puts its camera at
-    /// center + normalize(offset) * distance and aims back, with offset defaulting to
-    /// (-0.5, 0.6, 1). So the +Z face is the one that ends up on screen, seen from slightly
-    /// above and to the left - and a preview lit and aimed any other way is reviewing a side
-    /// of the model the player never sees.
-    /// </summary>
-    private static readonly Vector3 GameCamOffset = new Vector3(-0.5f, 0.6f, 1f);
-
     private static void BuildLights(GameObject rig)
     {
+        // What ItemRegistry.RenderWithFill sets for the duration of each icon render: flat
+        // ambient and no shadows. The menu scene's own ambient is near zero, which is what
+        // made the sides of every model sink into black.
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.42f, 0.43f, 0.46f);
+        RenderSettings.ambientLight = new Color(0.32f, 0.33f, 0.36f);
+        QualitySettings.shadows = ShadowQuality.Disable;
 
-        // The angle and tint the game uses for its own icon renders.
-        GameObject key = new GameObject("Key");
-        key.transform.SetParent(rig.transform, false);
-        key.transform.rotation = Quaternion.Euler(45f, -45f, 6.748f);
-        Light kl = key.AddComponent<Light>();
-        kl.type = LightType.Directional;
-        kl.intensity = 0.95f;
-        kl.color = new Color32(255, 244, 214, 255);
-        kl.shadows = LightShadows.None;
-
-        GameObject fill = new GameObject("Fill");
-        fill.transform.SetParent(rig.transform, false);
-        fill.transform.rotation = Quaternion.Euler(-10f, 150f, 0f);
-        Light fl = fill.AddComponent<Light>();
-        fl.type = LightType.Directional;
-        fl.intensity = 0.35f;
-        fl.shadows = LightShadows.None;
+        // PummelTargetRenderer's own TempDirectionalLight, in world space.
+        AddLight(rig.transform, "TempDirectionalLight", Quaternion.Euler(45f, -45f, 6.748f),
+                 new Color32(255, 244, 214, 255), 0.75f, local: false);
     }
 
-    /// <summary>Puts the camera where the game puts it, and sizes it to fit.</summary>
+    private static void AddLight(Transform parent, string name, Quaternion rotation, Color color,
+                                 float intensity, bool local)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        if (local) go.transform.localRotation = rotation;
+        else go.transform.rotation = rotation;
+
+        Light l = go.AddComponent<Light>();
+        l.type = LightType.Directional;
+        l.color = color;
+        l.intensity = intensity;
+        l.shadows = LightShadows.None;
+    }
+
+    /// <summary>
+    /// Puts the camera where PreviewRendererCam.Focus puts it - the same direction, and the
+    /// distance at which the bounds' sphere fits the field of view with the game's 5% margin.
+    /// Also strips glow from the instance's materials (copies, never the assets): the game has
+    /// no shader variant that draws emission, so showing it here would preview something no
+    /// player will ever see.
+    /// </summary>
     private static bool Frame(Camera cam, GameObject instance)
     {
         Renderer[] rs = instance.GetComponentsInChildren<Renderer>(true);
@@ -189,13 +219,24 @@ public static class IconPreview
         Bounds b = rs[0].bounds;
         for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
 
-        // Bounds are measured along the world axes; the view is at an angle to all three, so
-        // the enclosing sphere is what has to fit rather than any one extent.
-        float radius = b.extents.magnitude;
-        if (radius <= 0.0001f) radius = 0.5f;
+        for (int i = 0; i < rs.Length; i++)
+        {
+            Material[] mats = rs[i].sharedMaterials;
+            for (int m = 0; m < mats.Length; m++)
+            {
+                if (mats[m] == null) continue;
+                Material copy = new Material(mats[m]);
+                copy.DisableKeyword("_EMISSION");
+                if (copy.HasProperty("_EmissionColor")) copy.SetColor("_EmissionColor", Color.black);
+                mats[m] = copy;
+            }
+            rs[i].sharedMaterials = mats;
+        }
 
-        cam.orthographicSize = radius * 1.05f;
-        cam.transform.position = b.center + GameCamOffset.normalized * (radius + 20f);
+        float distance = b.size.magnitude / 2f * 1.05f / Mathf.Sin(Mathf.Deg2Rad * GameFov / 2f);
+        if (distance <= 0.0001f) distance = 1f;
+
+        cam.transform.position = b.center + GameCamOffset.normalized * distance;
         cam.transform.rotation = Quaternion.LookRotation((b.center - cam.transform.position).normalized);
         return true;
     }

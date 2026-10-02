@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace PummelCustomItems
@@ -53,6 +54,35 @@ namespace PummelCustomItems
     }
 
     /// <summary>
+    /// Destroys the materials and meshes an effect made for itself, together with the effect.
+    ///
+    /// Unity frees neither when the GameObject using them is destroyed - they last until the
+    /// scene unloads. One explosion makes up to about 25 materials and a meteor trail about 45
+    /// a second, so a long board game was quietly piling up thousands of them.
+    /// </summary>
+    internal class OwnedAssets : MonoBehaviour
+    {
+        private readonly List<UnityEngine.Object> m_assets = new List<UnityEngine.Object>();
+
+        /// <summary>Registers <paramref name="asset"/> to be destroyed with <paramref name="owner"/>.</summary>
+        internal static T Own<T>(GameObject owner, T asset) where T : UnityEngine.Object
+        {
+            if (owner == null || asset == null) return asset;
+            OwnedAssets o = owner.GetComponent<OwnedAssets>();
+            if (o == null) o = owner.AddComponent<OwnedAssets>();
+            o.m_assets.Add(asset);
+            return asset;
+        }
+
+        private void OnDestroy()
+        {
+            for (int i = 0; i < m_assets.Count; i++)
+                if (m_assets[i] != null) Destroy(m_assets[i]);
+            m_assets.Clear();
+        }
+    }
+
+    /// <summary>
     /// Ground wedge showing exactly what an item will sweep - reach and angle both. An arrow
     /// only says "that way", which for a cone leaves the player guessing how wide it is; the
     /// game's own magnet lays a shaped marker down for the same reason.
@@ -90,7 +120,7 @@ namespace PummelCustomItems
                 tris[i * 3 + 2] = i + 2;
             }
 
-            Mesh mesh = new Mesh();
+            Mesh mesh = OwnedAssets.Own(gameObject, new Mesh());
             mesh.name = "PCI_SectorMesh";
             mesh.vertices = verts;
             mesh.triangles = tris;
@@ -101,7 +131,7 @@ namespace PummelCustomItems
             MeshRenderer mr = gameObject.AddComponent<MeshRenderer>();
 
             Shader sh = Effects.UnlitShader();
-            m_mat = (sh != null) ? new Material(sh) : null;
+            m_mat = (sh != null) ? OwnedAssets.Own(gameObject, new Material(sh)) : null;
             if (m_mat != null)
             {
                 m_mat.color = new Color(color.r, color.g, color.b, 0.30f);
@@ -177,7 +207,7 @@ namespace PummelCustomItems
                 new Color(color.r, color.g, color.b, 0.25f),
             };
 
-            Mesh mesh = new Mesh { name = "PCI_BeamMesh" };
+            Mesh mesh = OwnedAssets.Own(gameObject, new Mesh { name = "PCI_BeamMesh" });
             mesh.vertices = verts;
             mesh.triangles = tris;
             mesh.colors = cols;
@@ -188,7 +218,7 @@ namespace PummelCustomItems
             MeshRenderer mr = gameObject.AddComponent<MeshRenderer>();
 
             Shader sh = Effects.UnlitShader();
-            m_mat = (sh != null) ? new Material(sh) : null;
+            m_mat = (sh != null) ? OwnedAssets.Own(gameObject, new Material(sh)) : null;
             if (m_mat != null)
             {
                 m_mat.color = new Color(color.r, color.g, color.b, 0.36f);
@@ -241,7 +271,7 @@ namespace PummelCustomItems
         private void Build(Color color)
         {
             Shader sh = Effects.UnlitShader();
-            m_mat = new Material(sh != null ? sh : Shader.Find("Standard"));
+            m_mat = OwnedAssets.Own(gameObject, new Material(sh != null ? sh : Shader.Find("Standard")));
             m_mat.color = new Color(color.r, color.g, color.b, 0.75f);
 
             GameObject shaft = GameObject.CreatePrimitive(PrimitiveType.Cube);

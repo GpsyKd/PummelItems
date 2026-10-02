@@ -108,10 +108,11 @@ namespace PummelCustomItems
 
             if (player.IsAI) m_aim = AimAtNearestOpponent();
 
-            // The owner knows the aim; the server does the spawning. Locally that is the
-            // same machine, but keeping the split means this still holds over the network.
+            // Only the owner knows where they aimed, so it tells everyone else. Every machine
+            // then plays the throw out from the same direction - the owner uses exactly the
+            // two numbers it sent, so nobody works from a different vector.
             SendRPC("RPCThrow", NetRPCDelivery.RELIABLE_ORDERED, m_aim.x, m_aim.z);
-            DoThrow(m_aim);
+            DoThrow(new Vector3(m_aim.x, 0f, m_aim.z));
         }
 
         [NetRPC(true, NetRPCSecurity.OWNER, NetRPCSecurity.ALL)]
@@ -120,10 +121,19 @@ namespace PummelCustomItems
             DoThrow(new Vector3(dirX, 0f, dirZ));
         }
 
+        /// <summary>True on the machine whose word is final for synced state.</summary>
+        protected static bool Authority { get { return NetSystem.IsServer; } }
+
+        /// <summary>
+        /// Runs on every machine, like InstantItem.Perform. It used to stop at once on anything
+        /// but the host - including the Finish() at the end - so online a client's item never
+        /// finished on the client, and effects that the game does not sync (damage from a
+        /// siphon, being dragged by the grapple, a curse on someone's dice) happened on the
+        /// host's screen only. Spawning network objects is the one host-only step; see
+        /// ThrownItemBase.SpawnOne.
+        /// </summary>
         private void DoThrow(Vector3 dir)
         {
-            if (!NetSystem.IsServer) return;
-
             if (dir.sqrMagnitude < 0.01f) dir = player.BoardObject.transform.forward;
 
             try { PerformAimed(dir.normalized); }
@@ -268,18 +278,28 @@ namespace PummelCustomItems
                     float t = ((float)i / (count - 1)) - 0.5f;
                     shotDir = Quaternion.Euler(0f, t * SpreadDegrees, 0f) * dir;
                 }
-                SpawnOne(shotDir);
+                // The host spawns, and the network delivers the projectile to everyone else.
+                if (Authority) SpawnOne(shotDir);
             }
             Core.Log(GetType().Name + ": thrown by player " + player.GlobalID);
         }
 
-        /// <summary>Overridable: the boomerang spawns a different component entirely.</summary>
+        /// <summary>
+        /// Overridable: the boomerang spawns a different component entirely.
+        ///
+        /// The projectile is OWNED by the host, which also launches it. Ownership decides which
+        /// machine runs the flight, the fuse and the hit test; the thrower is carried in the
+        /// owner slot, which is what the projectile reads to know whose it is. It used to be
+        /// owned by the thrower's machine while the host launched it - for a throw from a
+        /// client, the machine with the launch parameters was not the one allowed to fly it,
+        /// so the grenade dropped at the thrower's feet and lay there.
+        /// </summary>
         protected virtual void SpawnOne(Vector3 dir)
         {
             Vector3 from = player.BoardObject.transform.position + Vector3.up * 1.4f + dir * 0.6f;
 
             GameObject go = NetSystem.Spawn(ProjectilePrefabName, from, Quaternion.identity,
-                                            base.OwnerSlot, player.NetOwner);
+                                            base.OwnerSlot, NetSystem.MyPlayer);
             if (go == null)
             {
                 Core.Warn(GetType().Name + ": spawn failed for " + ProjectilePrefabName);

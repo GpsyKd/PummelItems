@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -17,6 +17,8 @@ public static class BundleBuilder
 
     public static void All()
     {
+        CleanGenerated();
+        ShapeKit.ResetNames();
         Directory.CreateDirectory(PrefabDir);
         MakeShuffleOrb();
         MakeLoadedDie();
@@ -29,7 +31,8 @@ public static class BundleBuilder
     /// <summary>The thrown-projectile family: grenade, shard, sticky, icicle, pellet, boomerang.</summary>
     private static void MakeGroupA()
     {
-        BuildOne(GroupAModels.Grenade(Paint),   "Grenade");
+        // From the spoon's side and a little in front, where the ring pin hangs.
+        BuildOne(GroupAModels.Grenade(Paint),   "Grenade", new Vector3(1f, 0.40f, 0.55f));
         BuildOne(GroupAModels.Shard(Paint),     "Shard");
         BuildOne(GroupAModels.Sticky(Paint),    "Sticky");
         BuildOne(GroupAModels.Icicle(Paint),    "Icicle", new Vector3(1f, 0.22f, 0.30f));
@@ -37,21 +40,21 @@ public static class BundleBuilder
         BuildOne(GroupAModels.Boomerang(Paint), "Boomerang", new Vector3(0.18f, 1f, 0.30f), Vector3.forward);
 
         BuildOne(GroupAModels.SwapBag(Paint),   "SwapBag", new Vector3(0.25f, 0.20f, 1f));
-        BuildOne(GroupAModels.Copier(Paint),    "Copier", new Vector3(0.25f, 1f, 0.45f), Vector3.forward);
-        BuildOne(GroupAModels.Junk(Paint),      "Junk");
-        BuildOne(GroupAModels.Tax(Paint),       "Tax");
+        BuildOne(GroupAModels.Copier(Paint),    "Copier", new Vector3(-0.5f, 0.65f, 1f));   // front left: the tray and the copy on it
+        BuildOne(GroupAModels.Junk(Paint),      "Junk", new Vector3(0.45f, 0.75f, 1f));
+        BuildOne(GroupAModels.Tax(Paint),       "Tax", new Vector3(0.15f, 1f, -0.55f));   // read from -z, top of the page up
 
         BuildOne(GroupAModels.GlassCannon(Paint), "GlassCannon", new Vector3(1f, 0.30f, 0.40f));
-        BuildOne(GroupAModels.Pinata(Paint),      "Pinata", new Vector3(0.25f, 0.20f, 1f));
+        BuildOne(GroupAModels.Pinata(Paint),      "Pinata", new Vector3(0.45f, 0.22f, 1f));
         BuildOne(GroupAModels.Generosity(Paint),  "Generosity");
 
         BuildOne(GroupAModels.DeathWand(Paint), "DeathWand", new Vector3(0.15f, 0.10f, 1f));
         BuildOne(GroupAModels.Meteor(Paint),    "MeteorRock", new Vector3(1f, 0.35f, 0.10f));
-        BuildOne(GroupAModels.Vacuum(Paint),    "Vacuum", new Vector3(1f, 0.32f, 0.12f));
-        BuildOne(GroupAModels.Piggy(Paint),     "Piggy");
+        BuildOne(GroupAModels.Vacuum(Paint),    "Vacuum", new Vector3(0.45f, 0.5f, -1f));   // drum on the left, keys flying in on the right
+        BuildOne(GroupAModels.Piggy(Paint),     "Piggy", new Vector3(0.55f, 0.30f, 1f));   // three-quarter, face towards the camera
 
         BuildOne(GroupAModels.Curse(Paint),      "Curse", new Vector3(0.20f, 0.15f, 1f));
-        BuildOne(GroupAModels.Freeze(Paint),     "Freeze");
+        BuildOne(GroupAModels.Freeze(Paint),     "Freeze", new Vector3(0.28f, 0.40f, 1f));   // from the side: from above the crystals are a star
         BuildOne(GroupAModels.DoubleDice(Paint), "DoubleDice");
         BuildOne(GroupAModels.Grapple(Paint),    "Grapple", new Vector3(0.55f, 0.25f, 1f));
         BuildOne(GroupAModels.Boot(Paint),       "Boot", new Vector3(0.20f, 0.18f, 1f));
@@ -62,7 +65,7 @@ public static class BundleBuilder
         BuildOne(GroupAModels.Signpost(Paint), "Signpost");
 
         BuildOne(GroupAModels.LifeMagnet(Paint), "LifeMagnet");
-        BuildOne(GroupAModels.Ricochet(Paint),  "Ricochet", new Vector3(0.12f, 0.18f, 1f));
+        BuildOne(GroupAModels.Ricochet(Paint),  "Ricochet", new Vector3(0.12f, 0.18f, -1f));   // lock side, muzzle to the right
     }
 
     /// <summary>
@@ -93,6 +96,7 @@ public static class BundleBuilder
     /// </param>
     private static void BuildOne(GameObject root, string name, Vector3 faceDir, Vector3 upHint)
     {
+        Soften(root, name);
         StripColliders(root);
         SaveIconVariant(root, name, BakeRotation(faceDir, upHint));
         SavePrefab(root, name);
@@ -101,6 +105,7 @@ public static class BundleBuilder
     /// <summary>Same, but with the viewing side worked out from the model's proportions.</summary>
     private static void BuildOne(GameObject root, string name)
     {
+        Soften(root, name);
         Vector3 up;
         Vector3 dir = AutoFaceDir(root, out up);
 
@@ -203,7 +208,10 @@ public static class BundleBuilder
               new Color(0.97f, 0.85f, 0.20f), emissive: false, matName: "Banana_Body");
         Paint(root.transform.Find("Stem").gameObject,
               new Color(0.35f, 0.25f, 0.10f), emissive: false, matName: "Banana_Stem");
+        Paint(root.transform.Find("Tip").gameObject,
+              new Color(0.24f, 0.17f, 0.08f), emissive: false, matName: "Banana_Tip");
 
+        Soften(root, "Banana");
         StripColliders(root);
         SaveIconVariant(root, "Banana", BakeRotation(new Vector3(0.20f, 0.28f, 1f)));
         SavePrefab(root, "Banana");
@@ -211,45 +219,48 @@ public static class BundleBuilder
 
     // ------------------------------------------------------------------ Loaded Die
 
+    /// <summary>
+    /// A real die: rounded edges and corners, flat pips set into the faces, opposite faces
+    /// adding up to seven. It used to be a razor-edged cube studded with 21 red half-balls -
+    /// 16 thousand triangles that still read as rivets. "Loaded" means the next roll is the
+    /// maximum, so the six is on top and its pips glow gold.
+    /// </summary>
     private static void MakeLoadedDie()
     {
         GameObject root = new GameObject("LoadedDie");
 
-        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        body.name = "Body";
-        body.transform.SetParent(root.transform, false);
-        body.transform.localScale = Vector3.one * 0.5f;
-        Paint(body, new Color(0.93f, 0.90f, 0.82f), emissive: false, matName: "Die_Body");
+        Mesh body = ShapeKit.Save(ShapeKit.RoundedBox(Vector3.one * 0.5f, 0.07f, 4), "LoadedDie_Body");
+        Paint(ShapeKit.Part(root, "Body", body, Vector3.zero, Quaternion.identity),
+              new Color(0.95f, 0.93f, 0.87f), emissive: false, matName: "Die_Body");
 
-        // A real d6: opposite faces sum to seven.
-        AddPips(root, 1, Vector3.up,      Vector3.right,   Vector3.forward);
-        AddPips(root, 6, Vector3.down,    Vector3.right,   Vector3.forward);
-        AddPips(root, 2, Vector3.forward, Vector3.right,   Vector3.up);
-        AddPips(root, 5, Vector3.back,    Vector3.right,   Vector3.up);
-        AddPips(root, 3, Vector3.right,   Vector3.forward, Vector3.up);
-        AddPips(root, 4, Vector3.left,    Vector3.forward, Vector3.up);
+        Mesh pip = ShapeKit.Save(ShapeKit.BevelCylinder(0.042f, 0.042f, 0.012f, 0.004f, 24), "LoadedDie_Pip");
+        Mesh one = ShapeKit.Save(ShapeKit.BevelCylinder(0.06f, 0.06f, 0.012f, 0.004f, 28), "LoadedDie_PipOne");
+
+        AddPips(root, 6, Vector3.up,      Vector3.right,   Vector3.forward, pip, new Color(0.98f, 0.76f, 0.26f), true,  "Die_PipGold");
+        AddPips(root, 1, Vector3.down,    Vector3.right,   Vector3.forward, one, new Color(0.78f, 0.10f, 0.10f), false, "Die_PipRed");
+        AddPips(root, 2, Vector3.forward, Vector3.right,   Vector3.up,      pip, new Color(0.12f, 0.12f, 0.14f), false, "Die_PipDark");
+        AddPips(root, 5, Vector3.back,    Vector3.right,   Vector3.up,      pip, new Color(0.12f, 0.12f, 0.14f), false, "Die_PipDark");
+        AddPips(root, 3, Vector3.right,   Vector3.forward, Vector3.up,      pip, new Color(0.12f, 0.12f, 0.14f), false, "Die_PipDark");
+        AddPips(root, 4, Vector3.left,    Vector3.forward, Vector3.up,      pip, new Color(0.12f, 0.12f, 0.14f), false, "Die_PipDark");
 
         StripColliders(root);
         SaveIconVariant(root, "LoadedDie", BakeRotation(new Vector3(0.50f, 0.40f, 1f)));
         SavePrefab(root, "LoadedDie");
     }
 
-    /// <summary>Places the pips of one die face, given its normal and two in-face axes.</summary>
-    private static void AddPips(GameObject root, int count, Vector3 normal, Vector3 u, Vector3 v)
+    /// <summary>Flat pips on one face, given its normal and two in-face axes.</summary>
+    private static void AddPips(GameObject root, int count, Vector3 normal, Vector3 u, Vector3 v,
+                                Mesh pipMesh, Color colour, bool glow, string matName)
     {
         const float half = 0.25f;   // body is 0.5 across, so the face sits at 0.25
-        const float o = 0.12f;      // pip offset from centre
+        const float o = 0.125f;     // pip offset from centre, inside the flat part of the face
         Vector2[] spots = PipLayout(count, o);
+        Quaternion facing = Quaternion.FromToRotation(Vector3.up, normal);
 
         for (int i = 0; i < spots.Length; i++)
         {
-            GameObject pip = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            pip.name = "Pip" + count + "_" + i;
-            pip.transform.SetParent(root.transform, false);
-            pip.transform.localScale = Vector3.one * 0.075f;
-            pip.transform.localPosition =
-                normal * (half - 0.005f) + u * spots[i].x + v * spots[i].y;
-            Paint(pip, new Color(0.85f, 0.15f, 0.15f), emissive: false, matName: "Die_Pip");
+            Vector3 at = normal * (half - 0.002f) + u * spots[i].x + v * spots[i].y;
+            Paint(ShapeKit.Part(root, "Pip" + count + "_" + i, pipMesh, at, facing), colour, glow, matName);
         }
     }
 
@@ -283,8 +294,28 @@ public static class BundleBuilder
         core.transform.localScale = Vector3.one * 0.55f;
         Paint(core, new Color(0.45f, 0.20f, 0.90f), emissive: true, matName: "Orb_Core");
 
-        AddRing(root, "RingA", Vector3.zero);
-        AddRing(root, "RingB", new Vector3(0f, 0f, 90f));
+        // Real rings. They used to be flattened cylinders - solid discs - so from above the
+        // orb read as a plate with a ball in it.
+        Mesh ring = ShapeKit.Save(ShapeKit.Torus(0.43f, 0.022f, 96, 14), "ShuffleOrb_Ring");
+        Paint(ShapeKit.Part(root, "RingA", ring, Vector3.zero, Quaternion.identity),
+              new Color(0.95f, 0.80f, 0.15f), emissive: false, matName: "Orb_Ring");
+        Paint(ShapeKit.Part(root, "RingB", ring, Vector3.zero, Quaternion.Euler(0f, 0f, 90f)),
+              new Color(0.95f, 0.80f, 0.15f), emissive: false, matName: "Orb_Ring");
+
+        // Four beads in player colours riding the rings: the item swaps everybody's places.
+        float d = 0.43f * Mathf.Sqrt(0.5f);
+        Vector3[] at = { new Vector3(d, 0f, d), new Vector3(-d, 0f, -d), new Vector3(0f, d, -d), new Vector3(0f, -d, d) };
+        Color[] colours = { new Color(0.90f, 0.28f, 0.26f), new Color(0.28f, 0.56f, 0.95f),
+                            new Color(0.32f, 0.78f, 0.38f), new Color(0.97f, 0.80f, 0.24f) };
+        for (int i = 0; i < at.Length; i++)
+        {
+            GameObject bead = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            bead.name = "Bead" + i;
+            bead.transform.SetParent(root.transform, false);
+            bead.transform.localScale = Vector3.one * 0.09f;
+            bead.transform.localPosition = at[i];
+            Paint(bead, colours[i], emissive: false, matName: "Orb_Bead" + i);
+        }
 
         StripColliders(root);
         SaveIconVariant(root, "ShuffleOrb", BakeRotation(new Vector3(0.35f, 0.30f, 1f)));
@@ -366,14 +397,49 @@ public static class BundleBuilder
         Debug.Log("[PCI] model built: " + path);
     }
 
-    private static void AddRing(GameObject root, string name, Vector3 euler)
+    /// <summary>
+    /// Swaps every plain Unity cube and cylinder in a model for the same shape at the same
+    /// size with its edges rounded. Razor-sharp primitive edges are the biggest single tell of
+    /// programmer art; a rounded edge catches a highlight and the part reads as a made thing.
+    ///
+    /// The part's scale is baked into its new mesh - a bevel on a unit cube would be squashed
+    /// along with it on a thin card - and handed down to its children so nothing moves. That
+    /// hand-down is exact for children that are not rotated or whose parent scales evenly,
+    /// which is every case in this set.
+    /// </summary>
+    private static void Soften(GameObject root, string model)
     {
-        GameObject ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        ring.name = name;
-        ring.transform.SetParent(root.transform, false);
-        ring.transform.localScale = new Vector3(0.9f, 0.03f, 0.9f);
-        ring.transform.localRotation = Quaternion.Euler(euler);
-        Paint(ring, new Color(0.95f, 0.80f, 0.15f), emissive: false, matName: "Orb_Ring");
+        int index = 0;
+        foreach (MeshFilter mf in root.GetComponentsInChildren<MeshFilter>(true))
+        {
+            Mesh src = mf.sharedMesh;
+            if (src == null) continue;
+            bool cube = src.name == "Cube", cylinder = src.name == "Cylinder";
+            if (!cube && !cylinder) continue;
+
+            Transform t = mf.transform;
+            Vector3 s = t.localScale;
+            Mesh soft;
+            if (cube)
+            {
+                float thinnest = Mathf.Min(s.x, Mathf.Min(s.y, s.z));
+                soft = ShapeKit.RoundedBox(s, Mathf.Clamp(thinnest * 0.2f, 0.0015f, 0.03f), 3);
+            }
+            else
+            {
+                float rx = 0.5f * s.x, rz = 0.5f * s.z, height = 2f * s.y;
+                float bevel = Mathf.Clamp(0.25f * Mathf.Min(Mathf.Min(rx, rz), height * 0.5f), 0.001f, 0.02f);
+                soft = ShapeKit.BevelCylinder(rx, rz, height, bevel, 28);
+            }
+
+            mf.sharedMesh = ShapeKit.Save(soft, "Soft_" + model + "_" + (index++) + "_" + t.name);
+            t.localScale = Vector3.one;
+            foreach (Transform child in t)
+            {
+                child.localPosition = Vector3.Scale(s, child.localPosition);
+                child.localScale = Vector3.Scale(s, child.localScale);
+            }
+        }
     }
 
     // One material asset per name, created once and handed out afterwards.
@@ -385,6 +451,13 @@ public static class BundleBuilder
     // bands) all share one name, so every copy but the last used to come out magenta.
     private static readonly Dictionary<string, Material> s_materials = new Dictionary<string, Material>();
 
+    // What each name was first asked for. The cache above hands out one material per name,
+    // so a second request with a different colour used to get the first one without a word -
+    // the boot's darker foot, the skull's jaw, the grenade's lever and two more were lost that
+    // way. A clash is now an error in the build log instead of a silent substitution.
+    private static readonly Dictionary<string, KeyValuePair<Color, bool>> s_requests =
+        new Dictionary<string, KeyValuePair<Color, bool>>();
+
     private static void Paint(GameObject go, Color c, bool emissive, string matName)
     {
         Renderer r = go.GetComponent<Renderer>();
@@ -395,16 +468,34 @@ public static class BundleBuilder
     private static Material MaterialNamed(string matName, Color c, bool emissive)
     {
         Material shared;
-        if (s_materials.TryGetValue(matName, out shared) && shared != null) return shared;
+        if (s_materials.TryGetValue(matName, out shared) && shared != null)
+        {
+            KeyValuePair<Color, bool> first;
+            if (s_requests.TryGetValue(matName, out first) && (first.Key != c || first.Value != emissive))
+            {
+                Debug.LogError("[PCI] material name clash: '" + matName + "' was made as " + first.Key +
+                               (first.Value ? " (glowing)" : "") + " and is now asked for as " + c +
+                               (emissive ? " (glowing)" : "") + " - give the second one its own name");
+            }
+            return shared;
+        }
 
         // Built-in render pipeline - the game ships no URP/HDRP assemblies.
+        MaterialStyle style = MaterialStyle.For(matName);
+        if (!MaterialStyle.IsKnown(matName))
+            Debug.LogWarning("[PCI] material '" + matName + "' has no entry in MaterialStyles - default plastic");
+
         Material m = new Material(Shader.Find("Standard"));
         m.color = c;
-        if (emissive)
+        m.SetFloat("_Glossiness", style.Smoothness);
+        m.SetFloat("_Metallic", style.Metallic);
+        if (emissive && style.Emission > 0f)
         {
             m.EnableKeyword("_EMISSION");
-            m.SetColor("_EmissionColor", c * 0.6f);
+            m.SetColor("_EmissionColor", c * (0.6f * style.Emission));
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
         }
+        s_requests[matName] = new KeyValuePair<Color, bool>(c, emissive);
 
         Directory.CreateDirectory("Assets/Materials");
         string matPath = "Assets/Materials/" + matName + ".mat";
@@ -414,6 +505,33 @@ public static class BundleBuilder
         shared = AssetDatabase.LoadAssetAtPath<Material>(matPath);
         s_materials[matName] = shared;
         return shared;
+    }
+
+    /// <summary>
+    /// Starts every build from empty generated folders. Assets left over from models that
+    /// were renamed or removed used to stay behind - a stale prefab still carries the bundle
+    /// name and would ship - and nothing showed which files a build actually made.
+    /// </summary>
+    private static void CleanGenerated()
+    {
+        string[] dirs = { "Assets/Materials", "Assets/Meshes", PrefabDir };
+        int removed = 0;
+
+        foreach (string dir in dirs)
+        {
+            if (!AssetDatabase.IsValidFolder(dir)) continue;
+            foreach (string guid in AssetDatabase.FindAssets("", new[] { dir }))
+            {
+                string p = AssetDatabase.GUIDToAssetPath(guid);
+                if (AssetDatabase.IsValidFolder(p)) continue;
+                if (AssetDatabase.DeleteAsset(p)) removed++;
+            }
+        }
+
+        s_materials.Clear();
+        s_requests.Clear();
+        AssetDatabase.Refresh();
+        Debug.Log("[PCI] removed " + removed + " generated asset(s) from the previous build");
     }
 
     private static void StripColliders(GameObject root)

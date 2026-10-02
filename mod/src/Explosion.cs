@@ -232,6 +232,13 @@ namespace PummelCustomItems
             return new Material(sh != null ? sh : Shader.Find("Standard"));
         }
 
+        /// <summary>Every piece's material was made for this blast alone - see OwnedAssets.</summary>
+        private void OnDestroy()
+        {
+            for (int i = 0; i < m_parts.Count; i++)
+                if (m_parts[i].Mat != null) Destroy(m_parts[i].Mat);
+        }
+
         /// <summary>Flat annulus of unit outer radius, shared by every blast.</summary>
         private static Mesh RingMesh()
         {

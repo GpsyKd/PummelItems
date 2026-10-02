@@ -44,3 +44,12 @@ desktop.ini
 unity/PPAssets/Assets/Materials/
 unity/PPAssets/Assets/Meshes/
 unity/PPAssets/Assets/Prefabs/
+
+# Internal working documents. The planning notes and the audit brief are written for us and
+# for whoever is asked to review this - they are not part of what the mod ships.
+ITEMS.md
+AUDIT.md
+AUDIT-RESULTS.md
+
+# Zero-byte leftover, not an actual project setting.
+unity/PPAssets/ProjectSettings/boot.config

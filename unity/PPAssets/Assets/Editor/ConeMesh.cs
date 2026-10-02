@@ -28,12 +28,25 @@ public static class ConeMesh
         return go;
     }
 
+    // The cache is keyed by name alone, so a second cone under a used name would silently get
+    // the first one's shape - the same trap as the material cache. Remember the sizes and say so.
+    private static readonly Dictionary<string, Vector3> s_sizes = new Dictionary<string, Vector3>();
+
     private static Mesh Get(string name, float backRadius, float frontRadius, float length)
     {
         string path = MeshDir + "/Cone_" + name + ".asset";
+        Vector3 size = new Vector3(backRadius, frontRadius, length);
 
         Mesh cached;
-        if (s_cache.TryGetValue(path, out cached) && cached != null) return cached;
+        if (s_cache.TryGetValue(path, out cached) && cached != null)
+        {
+            Vector3 first;
+            if (s_sizes.TryGetValue(path, out first) && first != size)
+                Debug.LogError("[PCI] cone name clash: '" + name + "' was built as " + first +
+                               " and is now asked for as " + size + " - give it its own name");
+            return cached;
+        }
+        s_sizes[path] = size;
 
         Mesh mesh = Build(backRadius, frontRadius, length);
         mesh.name = "Cone_" + name;

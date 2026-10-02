@@ -146,6 +146,14 @@ namespace PummelCustomItems
         [NetSend(-1, NetSendOwner.OWNER, NetSendFlags.ALWAYS_SEND)]
         public NetVec3 netRotation = new NetVec3(Vector3.zero);
 
+        // What kind of projectile this is, for every machine but the one that launched it.
+        // Launch() is the only place a projectile learns its kind, and it runs on the host
+        // alone, so without this every client treated every projectile as a banana: wrong
+        // size for fragments, wrong sound and blast, and an icicle that froze nobody. Sent as
+        // kind + 1, so that 0 can mean "not arrived yet" rather than "banana".
+        [NetSend(-1, NetSendOwner.OWNER, NetSendFlags.NONE)]
+        public NetVar<byte> netKind = new NetVar<byte>(0);
+
         // Layer 8 carries the players' hit volumes - the mask the game's own blasts use.
         private const int ActorLayerMask = 256;
 
@@ -162,7 +170,7 @@ namespace PummelCustomItems
         private Transform m_stuckTo;
         private Vector3 m_stickOffset;
         private float m_age;
-
+        private bool m_kindApplied;
 
         private readonly Collider[] m_hits = new Collider[32];
 
@@ -170,18 +178,22 @@ namespace PummelCustomItems
         {
             m_rb = GetComponent<Rigidbody>();
             m_thrower = GameManager.GetPlayerWithID((short)base.OwnerSlot);
+
+            // Only the owner simulates. Elsewhere the body is placed from the streamed
+            // position every frame; left physical it fought that, jittered, and played its
+            // own bounce sounds on top of the ones the owner sends.
+            if (!base.IsOwner && m_rb != null) m_rb.isKinematic = true;
+
             base.OnNetInitialize();
         }
 
         internal void Launch(Vector3 velocity, ProjectileKind kind)
         {
-            m_kind = kind;
-            m_spec = ProjectileSpec.For(kind);
+            ApplyKind(kind);
+            netKind.Value = (byte)((int)kind + 1);
+
             m_fuse = m_spec.Fuse;
             m_armed = true;
-
-            if (m_spec.Scale != 1f)
-                base.transform.localScale = base.transform.localScale * m_spec.Scale;
 
             if (m_rb == null) m_rb = GetComponent<Rigidbody>();
             if (m_rb == null) return;
@@ -217,9 +229,25 @@ namespace PummelCustomItems
             }
             else
             {
+                if (!m_kindApplied && netKind.Value != 0)
+                    ApplyKind((ProjectileKind)(netKind.Value - 1));
+
                 base.transform.position = netPosition.Value;
                 base.transform.eulerAngles = netRotation.Value;
             }
+        }
+
+        /// <summary>Takes on a kind's spec and size, once.</summary>
+        private void ApplyKind(ProjectileKind kind)
+        {
+            if (m_kindApplied) return;
+            m_kindApplied = true;
+
+            m_kind = kind;
+            m_spec = ProjectileSpec.For(kind);
+
+            if (m_spec.Scale != 1f)
+                base.transform.localScale = base.transform.localScale * m_spec.Scale;
         }
 
         private void OnCollisionEnter(Collision collision)
@@ -246,9 +274,21 @@ namespace PummelCustomItems
                 m_bounces++;
                 ModAssets.Play(m_spec.BounceSound, 0.4f);
 
+                // Only the owner's body collides, so it tells the others. Unreliable on
+                // purpose: a lost clink is not worth a resend.
+                if (base.IsOwner)
+                    SendRPC("BounceRPC", NetRPCDelivery.UNRELIABLE, (byte)Mathf.Min(m_bounces, 255));
+
                 if (m_spec.MaxBounces >= 0 && m_bounces > m_spec.MaxBounces && base.IsOwner)
                     OwnerExplode("out of bounces");
             }
+        }
+
+        [NetRPC(true, NetRPCSecurity.OWNER, NetRPCSecurity.ALL)]
+        public void BounceRPC(NetPlayer sender, byte bounces)
+        {
+            if (m_dead) return;
+            ModAssets.Play(m_spec.BounceSound, 0.4f);
         }
 
         /// <summary>
@@ -258,6 +298,11 @@ namespace PummelCustomItems
         /// </summary>
         private bool CheckProximity()
         {
+            // Once stuck, the fuse decides. Without this the next frame finds the same player
+            // still right here, skips the "stick" branch and detonates - which is what the
+            // logs showed: stuck, then exploded 16 ms later.
+            if (m_stuckTo != null) return false;
+
             int n = Physics.OverlapSphereNonAlloc(
                 base.transform.position, m_spec.ProximityRadius, m_hits,
                 ActorLayerMask, QueryTriggerInteraction.Collide);
@@ -462,22 +507,7 @@ namespace PummelCustomItems
         /// <summary>Mirrors the game's rule: no hurting teammates unless it is allowed.</summary>
         private bool IsProtectedTeammate(BoardActor actor)
         {
-            try
-            {
-                if (GameManager.PlayingSoloMode) return false;
-                if (GameManager.IsBoardItemTeamFriendlyFireEnabled) return false;
-                if (m_thrower == null) return false;
-
-                BoardPlayer bp = actor as BoardPlayer;
-                if (bp == null || bp.GamePlayer == null || bp.GamePlayer.GameTeam == null) return false;
-                if (bp.GamePlayer == m_thrower) return false;   // hurting yourself stays allowed
-
-                return bp.GamePlayer.GameTeam.IsInTeam(m_thrower);
-            }
-            catch
-            {
-                return false;
-            }
+            return FriendlyFire.Spares(actor, m_thrower);
         }
 
         private void SetVisible(bool visible)

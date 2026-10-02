@@ -84,5 +84,10 @@ fi
 
 if [ "$LAUNCH" = 1 ]; then
     echo "Launching Pummel Party..."
-    steam "steam://rungameid/$APPID" >/dev/null 2>&1 &
+    # In the foreground, not backgrounded: when this runs as a Game Mode shortcut, Steam tidies
+    # away whatever the shortcut leaves behind once the script exits, and a backgrounded call
+    # could be cleaned up before it has handed the request over. With Steam already running
+    # this returns as soon as the request is passed on. If the game still does not start, the
+    # switch above has already happened - starting Pummel Party normally gets the chosen mode.
+    steam "steam://rungameid/$APPID" >/dev/null 2>&1 || true
 fi

@@ -58,8 +58,8 @@ public static class MagnetMesh
         }
 
         // Caps, so the open ends are not see-through.
-        AddCap(verts, norms, tris, 0, sides, true);
-        AddCap(verts, norms, tris, segments * sides, sides, false);
+        AddCap(verts, norms, tris, 0, sides, sides);
+        AddCap(verts, norms, tris, segments * sides, (segments - 1) * sides, sides);
 
         Mesh mesh = new Mesh();
         mesh.name = "MagnetMesh";
@@ -70,27 +70,40 @@ public static class MagnetMesh
         return mesh;
     }
 
+    /// <summary>
+    /// Closes one end of the tube. The normal points away from the next ring in - which is what
+    /// "outward" means for an end cap whichever way the ring happens to be wound - and the
+    /// triangles are wound to face the same way. Choosing both from a flag let them disagree:
+    /// the caps' normals pointed into the tube.
+    /// </summary>
     private static void AddCap(List<Vector3> verts, List<Vector3> norms, List<int> tris,
-                               int ringStart, int sides, bool flip)
+                               int ringStart, int neighbourStart, int sides)
     {
-        Vector3 centre = Vector3.zero;
-        for (int j = 0; j < sides; j++) centre += verts[ringStart + j];
+        Vector3 centre = Vector3.zero, inner = Vector3.zero;
+        for (int j = 0; j < sides; j++)
+        {
+            centre += verts[ringStart + j];
+            inner += verts[neighbourStart + j];
+        }
         centre /= sides;
+        inner /= sides;
 
-        Vector3 normal = Vector3.Cross(verts[ringStart + 1] - verts[ringStart],
-                                       verts[ringStart + 2] - verts[ringStart]).normalized;
-        if (flip) normal = -normal;
+        Vector3 outward = (centre - inner).normalized;
+
+        // Unity faces a triangle (a, b, c) towards Cross(b - a, c - a).
+        Vector3 first = Vector3.Cross(verts[ringStart] - centre, verts[ringStart + 1] - centre);
+        bool forward = Vector3.Dot(first, outward) > 0f;
 
         int centreIndex = verts.Count;
         verts.Add(centre);
-        norms.Add(normal);
+        norms.Add(outward);
 
         for (int j = 0; j < sides; j++)
         {
             int a = ringStart + j;
             int b = ringStart + (j + 1) % sides;
-            if (flip) { tris.Add(centreIndex); tris.Add(a); tris.Add(b); }
-            else      { tris.Add(centreIndex); tris.Add(b); tris.Add(a); }
+            if (forward) { tris.Add(centreIndex); tris.Add(a); tris.Add(b); }
+            else         { tris.Add(centreIndex); tris.Add(b); tris.Add(a); }
         }
     }
 

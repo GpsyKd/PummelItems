@@ -5,12 +5,18 @@
 # Unity must be the SAME build the game runs: 2021.3.45f2 (changeset 88f88f591b2e).
 
 param(
-    [string]$Game   = "F:\SteamLibrary\steamapps\common\Pummel Party",
+    [string]$Game,                       # found automatically when not given
     [string]$Unity  = "C:\Program Files\Unity\Hub\Editor\2021.3.45f2\Editor\Unity.exe",
     [switch]$NoDeploy
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "find-game.ps1")
+$Game = Find-PummelParty -Hint $Game
+if (-not $Game -and -not $NoDeploy) {
+    throw "Could not find Pummel Party. Pass it explicitly: -Game 'D:\SteamLibrary\steamapps\common\Pummel Party'"
+}
 $proj = Join-Path $PSScriptRoot "unity\PPAssets"
 $log  = Join-Path $PSScriptRoot "unity\build.log"
 
@@ -36,8 +42,11 @@ if (Test-Path $lock) {
 Remove-Item $log -Force -ErrorAction SilentlyContinue
 Write-Host "Building asset bundle (this takes a minute)..."
 
+# No -nographics: without a graphics device Unity drops material keywords on save, so every
+# material reached the bundle with _EMISSION switched off (m_ValidKeywords: []) and only the
+# mod's runtime rebind brought the glow back. Batch mode with graphics works on this machine.
 $pr = Start-Process -FilePath $Unity -PassThru -Wait -ArgumentList @(
-    "-batchmode", "-quit", "-nographics"
+    "-batchmode", "-quit"
     "-projectPath", $proj
     "-executeMethod", "BundleBuilder.All"
     "-logFile", $log

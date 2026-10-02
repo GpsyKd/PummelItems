@@ -247,18 +247,28 @@ namespace PummelCustomItems
                                      " color=" + baseColor);
                         }
 
-                        // Built fresh against the running game's shader rather than patched.
-                        // A material serialised into a bundle carries state from the build it
-                        // came from, and anything the host build does not accept lands on the
-                        // error material - the bright magenta.
-                        Material m = new Material(s_standard);
+                        // A copy of the bundled material, re-pointed at the running game's own
+                        // Standard shader. Copying keeps everything the material was built
+                        // with - smoothness, metallic, keywords - where building a fresh one
+                        // used to keep the colour alone and turn every model into the same
+                        // plastic. Colour, emission, smoothness and metallic are still set
+                        // explicitly from what was read, in case a property did not survive
+                        // the shader swap.
+                        Material m = new Material(src);
+                        m.shader = s_standard;
                         m.name = src.name + "_live";
                         m.color = baseColor;
+                        m.SetFloat("_Glossiness", ReadFloat(src, "_Glossiness", 0.5f));
+                        m.SetFloat("_Metallic", ReadFloat(src, "_Metallic", 0f));
 
                         if (emission.maxColorComponent > 0.01f)
                         {
                             m.EnableKeyword("_EMISSION");
                             m.SetColor("_EmissionColor", emission);
+                        }
+                        else
+                        {
+                            m.DisableKeyword("_EMISSION");
                         }
 
                         mats[j] = m;
@@ -291,6 +301,50 @@ namespace PummelCustomItems
             }
             catch { }
             return fallback;
+        }
+
+        private static float ReadFloat(Material m, string property, float fallback)
+        {
+            try
+            {
+                if (m.HasProperty(property)) return m.GetFloat(property);
+            }
+            catch { }
+            return fallback;
+        }
+
+        private static string s_bundleTag;
+
+        /// <summary>
+        /// Eight hex digits of the bundle file's MD5. Icons are cached to disk; keying the cache
+        /// on the bundle's content means a rebuilt model gets a fresh icon on its own, instead
+        /// of the old picture staying until somebody remembers to bump a version number.
+        /// </summary>
+        internal static string BundleTag
+        {
+            get
+            {
+                if (s_bundleTag != null) return s_bundleTag;
+                s_bundleTag = "nobundle";
+                try
+                {
+                    string path = BundlePath;
+                    if (File.Exists(path))
+                    {
+                        using (System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create())
+                        using (FileStream fs = File.OpenRead(path))
+                        {
+                            byte[] h = md5.ComputeHash(fs);
+                            s_bundleTag = BitConverter.ToString(h, 0, 4).Replace("-", "").ToLowerInvariant();
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Core.Warn("bundle hash failed: " + e.Message);
+                }
+                return s_bundleTag;
+            }
         }
 
         /// <summary>

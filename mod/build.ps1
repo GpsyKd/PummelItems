@@ -1,18 +1,21 @@
-﻿# Builds PummelCustomItems.dll and copies it into the game's Mods folder.
+# Builds PummelCustomItems.dll and copies it into the game's Mods folder.
 # No .NET SDK required - uses the standalone Roslyn compiler in tools\roslyn.
 
 param(
-    [string]$Game = "F:\SteamLibrary\steamapps\common\Pummel Party",
+    [string]$Game,                       # found automatically when not given
     [switch]$NoDeploy
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path $PSScriptRoot -Parent          # ...\PummelPartyMod
+$root = Split-Path $PSScriptRoot -Parent          # the repository root
+
+. (Join-Path $root "find-game.ps1")
+$Game = Find-PummelParty -Hint $Game
 $csc  = Join-Path $root "tools\roslyn\tasks\net472\csc.exe"
 $out  = Join-Path $PSScriptRoot "bin\PummelCustomItems.dll"
 
 if (-not (Test-Path $csc))  { throw "Roslyn compiler not found at $csc" }
-if (-not (Test-Path $Game)) { throw "Game folder not found: $Game" }
+if (-not $Game) { throw "Could not find Pummel Party. Pass it explicitly: -Game 'D:\SteamLibrary\steamapps\common\Pummel Party'" }
 
 $managed = Join-Path $Game "PummelParty_Data\Managed"
 $ml      = Join-Path $Game "MelonLoader\net472"

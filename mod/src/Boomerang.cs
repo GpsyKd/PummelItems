@@ -49,6 +49,11 @@ namespace PummelCustomItems
         public override void OnNetInitialize()
         {
             m_thrower = GameManager.GetPlayerWithID((short)base.OwnerSlot);
+
+            // Played here, which runs on every machine as the boomerang appears. Launch() is
+            // where it used to be, and Launch runs on the host alone.
+            ModAssets.Play("snd_whirl", 0.7f);
+
             base.OnNetInitialize();
         }
 
@@ -60,7 +65,6 @@ namespace PummelCustomItems
             m_t = 0f;
             m_armed = true;
             base.transform.position = origin;
-            ModAssets.Play("snd_whirl", 0.7f);
         }
 
         private void Update()
@@ -174,22 +178,7 @@ namespace PummelCustomItems
 
         private bool IsProtectedTeammate(BoardActor actor)
         {
-            try
-            {
-                if (GameManager.PlayingSoloMode) return false;
-                if (GameManager.IsBoardItemTeamFriendlyFireEnabled) return false;
-                if (m_thrower == null) return false;
-
-                BoardPlayer bp = actor as BoardPlayer;
-                if (bp == null || bp.GamePlayer == null || bp.GamePlayer.GameTeam == null) return false;
-                if (bp.GamePlayer == m_thrower) return false;
-
-                return bp.GamePlayer.GameTeam.IsInTeam(m_thrower);
-            }
-            catch
-            {
-                return false;
-            }
+            return FriendlyFire.Spares(actor, m_thrower);
         }
 
         private void Finish()
@@ -226,8 +215,9 @@ namespace PummelCustomItems
         {
             Vector3 from = player.BoardObject.transform.position + Vector3.up * Boomerang.LaunchHeight;
 
+            // Owned and flown by the host, like every projectile - see ThrownItemBase.SpawnOne.
             GameObject go = NetSystem.Spawn(Prefabs.Boomerang, from, Quaternion.identity,
-                                            base.OwnerSlot, player.NetOwner);
+                                            base.OwnerSlot, NetSystem.MyPlayer);
             if (go == null) { Core.Warn("Boomerang: spawn failed"); return; }
 
             Boomerang b = go.GetComponent<Boomerang>();

@@ -88,6 +88,89 @@ unpack "$TMP/mod.zip" "$GAME"
 
 chmod +x "$GAME/switch-mod.sh" 2>/dev/null || true
 
+# ---------------------------------------------------------------- the launch choice
+
+# One game in the library, with the choice made as it starts: a small dialog with two
+# buttons, "with the mod" and "without", and the last choice preselected - left alone for a
+# few seconds, it starts the game the way it did last time.
+#
+# "Without" is the stock game, not a dormant mod. The wrapper simply does not set
+# WINEDLLOVERRIDES, so Proton uses its own built-in version.dll and never loads MelonLoader
+# at all. That is why this sits in the launch options rather than in the game: anything
+# inside the game would itself be the mod running.
+say "Installing the launch choice"
+HOME_DIR="$HOME/.local/share/pummelitems"
+mkdir -p "$HOME_DIR"
+printf '%s\n' "$GAME" > "$HOME_DIR/game_dir"
+[ -f "$HOME_DIR/mode" ] || printf 'modded\n' > "$HOME_DIR/mode"
+
+cat > "$HOME_DIR/launch.sh" <<'LAUNCH'
+#!/usr/bin/env bash
+# Steam launch wrapper for Pummel Party: asks whether to start with PummelItems or without.
+# Steam runs it as   launch.sh <the game's own command...>   and it ends by running that
+# command, with or without the setting that lets MelonLoader load.
+
+DIR="$HOME/.local/share/pummelitems"
+LAST="$(cat "$DIR/mode" 2>/dev/null || echo modded)"
+[ "$LAST" = vanilla ] || LAST=modded
+WAIT=5
+
+if [ "$LAST" = modded ]; then LAST_TEXT="с модом"; else LAST_TEXT="без мода"; fi
+TEXT="Как запустить Pummel Party?
+
+Если ничего не нажимать, через $WAIT с запустится как в прошлый раз: $LAST_TEXT."
+
+choice=""
+# zenity: OK = with the mod, Cancel = without, exit 5 = timed out.
+ZENITY="$(command -v zenity || ls "$HOME"/.local/share/Steam/ubuntu12_32/steam-runtime/usr/bin/zenity "$HOME"/.local/share/Steam/ubuntu12_32/steam-runtime/*/usr/bin/zenity 2>/dev/null | head -1)"
+if [ -n "$ZENITY" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    "$ZENITY" --question --title="Pummel Party" --text="$TEXT" \
+              --ok-label="С модом" --cancel-label="Без мода" --timeout="$WAIT" --width=420 2>/dev/null
+    case $? in
+        0) choice=modded ;;
+        1) choice=vanilla ;;
+    esac
+elif command -v kdialog >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    # kdialog has no timeout of its own, so one is supplied.
+    kdialog --title "Pummel Party" --yes-label "С модом" --no-label "Без мода" --yesno "$TEXT" 2>/dev/null &
+    pid=$!
+    ( sleep "$WAIT"; kill "$pid" 2>/dev/null ) &
+    timer=$!
+    wait "$pid"; code=$?
+    kill "$timer" 2>/dev/null
+    case $code in
+        0) choice=modded ;;
+        1) choice=vanilla ;;
+    esac
+fi
+
+# No dialog, no answer, or no screen to show one on: the last choice. The game always starts.
+[ -n "$choice" ] || choice="$LAST"
+printf '%s\n' "$choice" > "$DIR/mode"
+
+if [ "$choice" = modded ]; then
+    export WINEDLLOVERRIDES="version=n,b${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+    # An old manual switch may have left MelonLoader turned off; with the mod chosen, on it goes.
+    GAME="$(cat "$DIR/game_dir" 2>/dev/null)"
+    CFG="$GAME/UserData/Loader.cfg"
+    [ -f "$CFG" ] && sed -i -E '0,/^[[:space:]]*disable[[:space:]]*=.*/s//disable = false/' "$CFG"
+elif [ -n "${WINEDLLOVERRIDES:-}" ]; then
+    # The old setup put WINEDLLOVERRIDES="version=n,b" in the launch options themselves. If it
+    # is still there, take that one entry out, or "without" would load MelonLoader regardless.
+    WINEDLLOVERRIDES="$(printf '%s' "$WINEDLLOVERRIDES" | tr ';' '\n' | grep -v '^version=' | paste -sd ';' -)"
+    if [ -n "$WINEDLLOVERRIDES" ]; then export WINEDLLOVERRIDES; else unset WINEDLLOVERRIDES; fi
+fi
+
+exec "$@"
+LAUNCH
+chmod +x "$HOME_DIR/launch.sh"
+echo "    $HOME_DIR/launch.sh"
+
+# The two library entries an earlier version made, in case they are still there.
+rm -f "$HOME/.local/share/applications/pummelitems-modded.desktop" \
+      "$HOME/.local/share/applications/pummelitems-vanilla.desktop" \
+      "$HOME_DIR/pummel-modded.sh" "$HOME_DIR/pummel-vanilla.sh"
+
 # ---------------------------------------------------------------- check and report
 
 say "Checking"
@@ -99,30 +182,35 @@ for f in "version.dll" "Mods/PummelCustomItems.dll" "UserData/PummelCustomItems/
         printf '    MISSING %s\n' "$f"; ok=0
     fi
 done
+[ -x "$HOME_DIR/launch.sh" ] && printf '    ok      launch.sh\n' || ok=0
 [ "$ok" = 1 ] || die "Something did not land. Nothing has been broken - just run this again."
+
+printf '\n\033[1;32mDone.\033[0m\n'
 
 cat <<EOF
 
-$(printf '\033[1;32mInstalled.\033[0m') Two things left, and both are done in Steam by hand:
+One thing to do in Steam by hand, once - and again if you set it up before this version:
 
-1. Set the launch options. Steam -> Pummel Party -> gear icon -> Properties ->
-   Launch Options, and paste exactly this:
+    Pummel Party -> gear icon -> Properties -> Launch Options, replace whatever is there with
 
-       WINEDLLOVERRIDES="version=n,b" %command%
+        $HOME_DIR/launch.sh %command%
 
-   Without it Proton ignores version.dll and MelonLoader never loads. Leave it there
-   permanently - it only allows loading; the switch below decides whether it happens.
+(Select the line above here in Konsole, copy it, and paste it into Steam.)
 
-2. Start the game once and quit. MelonLoader writes UserData/Loader.cfg on that first
-   run, and the switch needs that file to exist.
+From then on, every time Pummel Party starts, it asks:
 
-After that, switching between the modded and the stock game:
+    [ С модом ]   our items, for local play
+    [ Без мода ]  the stock game, for playing online - MelonLoader does not load at all
 
-    "$GAME/switch-mod.sh"            # which mode am I in?
-    "$GAME/switch-mod.sh" vanilla    # stock game, for playing online
-    "$GAME/switch-mod.sh" modded     # our items, for local play
-
-To reach it from Game Mode without a keyboard, add switch-mod.sh to Steam twice as a
-non-Steam game, with "modded --launch" and "vanilla --launch" as its arguments.
-
+Tap one, or leave it and in 5 seconds it starts the way it did last time.
 EOF
+
+# Loader.cfg only exists once the game has run with MelonLoader, so its absence means this is
+# a first install.
+if [ ! -f "$GAME/UserData/Loader.cfg" ]; then
+    cat <<EOF
+
+First install: start the game once "С модом" and quit, so MelonLoader writes its settings.
+EOF
+fi
+echo

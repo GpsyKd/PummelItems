@@ -27,7 +27,10 @@ namespace PummelCustomItems
             }
             else
             {
+                // "Everyone but me" still respects the team rule: with friendly fire off,
+                // teammates are not part of everyone.
                 List<BoardPlayer> victims = OtherLivingPlayers();
+                victims.RemoveAll(v => FriendlyFire.Spares(v, player));
                 Say(me, "Все, кроме меня");
                 Core.Log("DeathWand: killing " + victims.Count + " opponent(s)");
                 StartCoroutine(StrikeAfter(0.9f, victims));
@@ -87,8 +90,21 @@ namespace PummelCustomItems
                 GamePlayer gp = GameManager.GetPlayerAt(i);
                 if (gp == null || gp.BoardObject == null) continue;
                 if (gp.BoardObject.LocalHealth <= 0) continue;
-                targets.Add(gp.BoardObject);   // nobody is spared, the user least of all
+
+                // The user is always hit - that is the price of the item. Teammates follow the
+                // team rule like every other item does.
+                if (FriendlyFire.Spares(gp.BoardObject, player)) continue;
+                targets.Add(gp.BoardObject);
             }
+
+            // Every damage roll is drawn now, before the first meteor falls. Drawing each one
+            // as its meteor dropped interleaved them with whatever else used the generator
+            // while rocks were in the air - and when that happens depends on the frame rate,
+            // which is different on every machine. Drawn up front, the sequence is the same
+            // everywhere, so everybody takes the same damage on every screen.
+            int[] damage = new int[targets.Count];
+            for (int i = 0; i < damage.Length; i++)
+                damage[i] = rand.Next(DamageMin, DamageMax + 1);
 
             Core.Log("Armageddon: " + targets.Count + " target(s)");
 
@@ -96,8 +112,8 @@ namespace PummelCustomItems
             for (int i = 0; i < targets.Count; i++)
             {
                 BoardPlayer t = targets[i];
-                int damage = rand.Next(DamageMin, DamageMax + 1);
-                Meteor.Drop(t.transform.position, () => Impact(t, damage));
+                int dmg = damage[i];
+                Meteor.Drop(t.transform.position, () => Impact(t, dmg));
                 yield return new WaitForSeconds(0.18f);
             }
         }
@@ -124,9 +140,11 @@ namespace PummelCustomItems
             Effects.Blast(target.transform.position, 2.6f);
 
             // Four identical bangs a fifth of a second apart read as a stutter; picking
-            // between three makes the same volley sound like a barrage.
+            // between three makes the same volley sound like a barrage. Only the sound depends
+            // on it, so this one is free to differ between machines - which is why it does not
+            // touch the shared `rand`.
             string[] booms = { "snd_boom_a", "snd_boom_b", "snd_boom_c" };
-            ModAssets.Play(booms[rand.Next(booms.Length)], 0.8f);
+            ModAssets.Play(booms[UnityEngine.Random.Range(0, booms.Length)], 0.8f);
 
             try { GameManager.Board.boardCamera.AddShake(0.45f); } catch { }
         }
@@ -192,7 +210,7 @@ namespace PummelCustomItems
             Collider c = rock.GetComponent<Collider>();
             if (c != null) Destroy(c);
 
-            Material mat = new Material(Shader.Find("Standard"));
+            Material mat = OwnedAssets.Own(gameObject, new Material(Shader.Find("Standard")));
             mat.color = new Color(0.24f, 0.16f, 0.14f);
             mat.EnableKeyword("_EMISSION");
             mat.SetColor("_EmissionColor", new Color(1f, 0.42f, 0.08f));
@@ -227,7 +245,7 @@ namespace PummelCustomItems
             go.transform.localScale = Vector3.one * 3.4f;
 
             Shader sh = Effects.UnlitShader();
-            m_markMat = new Material(sh != null ? sh : Shader.Find("Standard"));
+            m_markMat = OwnedAssets.Own(go, new Material(sh != null ? sh : Shader.Find("Standard")));
             m_markMat.color = new Color(1f, 0.25f, 0.1f, 0.5f);
 
             Renderer r = go.GetComponent<Renderer>();
@@ -279,7 +297,13 @@ namespace PummelCustomItems
     {
         private const float Duration = 0.45f;
 
-        private Material m_mat;
+        // One material for every puff there will ever be; each puff's colour rides on a
+        // property block instead. A material per puff meant ~45 new ones a second per meteor.
+        private static Material s_shared;
+        private static readonly int ColorID = Shader.PropertyToID("_Color");
+
+        private Renderer m_renderer;
+        private MaterialPropertyBlock m_block;
         private float m_t;
         private float m_size;
 
@@ -295,14 +319,27 @@ namespace PummelCustomItems
             TrailPuff p = go.AddComponent<TrailPuff>();
             p.m_size = size;
 
-            Shader sh = Effects.UnlitShader();
-            p.m_mat = new Material(sh != null ? sh : Shader.Find("Standard"));
-            p.m_mat.color = new Color(1f, 0.65f, 0.2f, 0.9f);
+            if (s_shared == null)
+            {
+                Shader sh = Effects.UnlitShader();
+                s_shared = new Material(sh != null ? sh : Shader.Find("Standard"));
+                s_shared.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            }
 
             Renderer r = go.GetComponent<Renderer>();
-            r.material = p.m_mat;
+            r.sharedMaterial = s_shared;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
+
+            p.m_renderer = r;
+            p.m_block = new MaterialPropertyBlock();
+            p.SetColor(new Color(1f, 0.65f, 0.2f, 0.9f));
+        }
+
+        private void SetColor(Color c)
+        {
+            m_block.SetColor(ColorID, c);
+            m_renderer.SetPropertyBlock(m_block);
         }
 
         private void Update()
@@ -313,11 +350,10 @@ namespace PummelCustomItems
             // Swells and cools as it is left behind - burning air, not a bead on a string.
             transform.localScale = Vector3.one * m_size * (1f + m_t * 0.9f);
 
-            Color c = m_mat.color;
-            c.g = Mathf.Lerp(0.65f, 0.22f, m_t);
-            c.b = Mathf.Lerp(0.2f, 0.18f, m_t);
-            c.a = 0.9f * (1f - m_t) * (1f - m_t);
-            m_mat.color = c;
+            SetColor(new Color(1f,
+                               Mathf.Lerp(0.65f, 0.22f, m_t),
+                               Mathf.Lerp(0.2f, 0.18f, m_t),
+                               0.9f * (1f - m_t) * (1f - m_t)));
         }
     }
 
@@ -354,10 +390,14 @@ namespace PummelCustomItems
                 if (delta.magnitude > Reach) continue;
                 if (Vector3.Angle(dir, delta) > HalfAngle) continue;
 
+                // Counted everywhere, so every machine shows the same "+N"; picked up on the
+                // host only, because PickupKey on the host already tells every other machine.
+                taken++;
+                if (!Authority) continue;
+
                 try
                 {
                     GameManager.KeyController.PickupKey(me, k.ID);
-                    taken++;
                 }
                 catch (Exception e)
                 {
@@ -428,6 +468,13 @@ namespace PummelCustomItems
             s_collector = collector;
             s_ownerID = ownerID;
             s_turnsLeft = 2;
+        }
+
+        internal static void Reset()
+        {
+            s_collector = null;
+            s_ownerID = -1;
+            s_turnsLeft = 0;
         }
 
         internal static void OnTurnStarted(short playerID, BoardPlayer who)

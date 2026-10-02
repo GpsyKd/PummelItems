@@ -196,8 +196,19 @@ namespace PummelCustomItems
                 return;
             }
 
+            // The path runs from the target's node to ours. With just those two in it the
+            // target is already next to us - "one node short of ours" is where they stand.
+            // The old index arithmetic clamped that case to path[1], our own node, and dragged
+            // them on top of us.
+            if (path.Count == 2)
+            {
+                DiceOverride.Announce(player.BoardObject, "Уже рядом");
+                Core.Log("Grapple: target is already on the next node");
+                return;
+            }
+
             // Stop one short so the two never end up on the same node.
-            BoardNode dest = path[Mathf.Max(1, path.Count - 2)];
+            BoardNode dest = path[path.Count - 2];
 
             ModAssets.Play("snd_whirl", 0.8f);
             DiceOverride.Announce(target, "Сюда!");

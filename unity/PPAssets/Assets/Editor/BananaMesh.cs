@@ -34,9 +34,12 @@ public static class BananaMesh
         {
             float t = (float)i / segments;
 
-            // Fat in the middle, pinched at both tips - the exponent keeps the belly
-            // full instead of making it a lens shape.
+            // Fat in the middle, pinched at the flower end - the exponent keeps the belly
+            // full instead of making it a lens shape. The stalk end does not come to a point:
+            // a banana narrows into its stalk and stops square, which is half of what makes
+            // it read as a banana rather than a boat.
             float r = thickness * Mathf.Pow(Mathf.Sin(Mathf.PI * t), 0.45f);
+            if (t > 0.5f) r = Mathf.Max(r, thickness * 0.30f * Mathf.SmoothStep(0f, 1f, (t - 0.5f) / 0.45f));
             r = Mathf.Max(r, 0.004f);
 
             Vector3 fwd = tangents[i];
@@ -67,6 +70,21 @@ public static class BananaMesh
             }
         }
 
+        // Close the square stalk end with a slightly domed cap.
+        {
+            int ring = segments * sides;
+            Vector3 fwd = tangents[segments];
+            float rEnd = (verts[ring] - spine[segments]).magnitude;
+            int centre = verts.Count;
+            verts.Add(spine[segments] + fwd * rEnd * 0.25f);
+            norms.Add(fwd);
+            for (int j = 0; j < sides; j++)
+            {
+                int a = ring + j, b = ring + (j + 1) % sides;
+                tris.Add(centre); tris.Add(b); tris.Add(a);
+            }
+        }
+
         Mesh mesh = new Mesh();
         mesh.name = "BananaMesh";
         mesh.SetVertices(verts);
@@ -79,7 +97,11 @@ public static class BananaMesh
     /// <summary>Banana body plus the little brown stem, saved as a mesh asset.</summary>
     public static GameObject BuildPrefabRoot(string assetPath)
     {
-        Mesh mesh = Build();
+        const float length = 1.0f, bend = 55f;   // the stem and the tip below use the same arc
+
+        // Five sides: a banana is ridged, not round, and with smooth normals a pentagon reads
+        // as a soft ridged fruit where ten sides read as a sausage.
+        Mesh mesh = Build(segments: 32, sides: 5, length: length, bend: bend);
         AssetDatabase.CreateAsset(mesh, assetPath);
 
         GameObject root = new GameObject("Banana");
@@ -90,12 +112,30 @@ public static class BananaMesh
             AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
         body.AddComponent<MeshRenderer>();
 
+        // The stem sits on the end of the centreline and carries on along it. It used to be
+        // placed by hand at (0.47, 0.10) pointing up-right, 6 cm above the tip it belongs to
+        // and angled the other way; deriving it from the same arc as the body cannot drift.
+        float arc = bend * Mathf.Deg2Rad;
+        float radius = length / arc;
+        float a = 0.5f * arc;
+        Vector3 tip = new Vector3(Mathf.Sin(a) * radius, Mathf.Cos(a) * radius - radius, 0f);
+        Vector3 along = new Vector3(Mathf.Cos(a), -Mathf.Sin(a), 0f);
+
         GameObject stem = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         stem.name = "Stem";
         stem.transform.SetParent(root.transform, false);
-        stem.transform.localScale = new Vector3(0.035f, 0.05f, 0.035f);
-        stem.transform.localPosition = new Vector3(0.47f, 0.10f, 0f);
-        stem.transform.localRotation = Quaternion.Euler(0f, 0f, -62f);
+        stem.transform.localScale = new Vector3(0.045f, 0.05f, 0.045f);
+        stem.transform.localPosition = tip + along * 0.035f;
+        stem.transform.localRotation = Quaternion.FromToRotation(Vector3.up, along);
+
+        // The dark flower tip at the other end.
+        Vector3 flower = new Vector3(-Mathf.Sin(a) * radius, Mathf.Cos(a) * radius - radius, 0f);
+        Vector3 back = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f);   // tangent at the flower end, into the fruit
+        GameObject end = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        end.name = "Tip";
+        end.transform.SetParent(root.transform, false);
+        end.transform.localScale = new Vector3(0.028f, 0.028f, 0.028f);
+        end.transform.localPosition = flower + back * 0.006f;
 
         return root;
     }

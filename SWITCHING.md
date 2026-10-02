@@ -1,33 +1,64 @@
 # Switching between the modded and the stock game
 
-Local play wants our items. Online play wants the game exactly as the other players have it,
-because our items exist only on this machine - the ones joining would be missing every prefab
-and every item id we add.
+Local play wants our items. Online play with people who do not have the mod wants the game
+exactly as they have it. Both are one click away, and neither involves uninstalling anything.
 
-## How the switch works
+## Telling which mode you are in
 
-MelonLoader can turn itself off. `UserData/Loader.cfg` has, under `[loader]`:
+Look at the version number in the corner of the main menu. With the mod loaded it ends in
+`+PummelItems.<version>`; the stock game shows the plain number.
+
+That label is not decoration: it is the version the game compares when someone joins. So the
+game itself refuses to mix modded and stock players, or two different versions of the mod, and
+shows its ordinary "version mismatch" message instead of letting a session fall apart.
+
+## Steam Deck
+
+Install or update with one command in Konsole (Desktop Mode):
 
 ```
-disable = false
+curl -sL https://raw.githubusercontent.com/GpsyKd/PummelItems/main/install-deck.sh | bash
 ```
 
-`true` there is the same as passing `--no-mods`: MelonLoader stops before it loads anything of
-ours, and the game is stock. The switch scripts flip that one line and nothing else.
+Then, once, in Steam: Pummel Party → gear icon → Properties → **Launch Options**, and replace
+whatever is there with the line the installer prints, which looks like
 
-Nothing is renamed, moved or reinstalled, so there is no half-switched state to end up in and
-no way to lose the mod by switching at an awkward moment.
+```
+/home/deck/.local/share/pummelitems/launch.sh %command%
+```
+
+From then on Pummel Party asks every time it starts:
+
+| Button | What you get |
+| --- | --- |
+| **С модом** | our items, for local play |
+| **Без мода** | the stock game, for playing online |
+
+Tap one, or leave it, and after five seconds it starts the way it did last time. There is still
+one Pummel Party in the library.
+
+"Без мода" is genuinely stock: the launcher does not set the one setting that lets Proton load
+MelonLoader's `version.dll`, so MelonLoader never starts at all.
+
+If the dialog ever fails to appear, the game still starts, in the last mode used. To change it
+by hand, edit `~/.local/share/pummelitems/mode` (`modded` or `vanilla`).
 
 ## Windows
 
-Two files in this folder, one click each:
+Windows has no launch wrapper like that, so the switch is MelonLoader's own off switch:
+`UserData/Loader.cfg`, under `[loader]`, has `disable = false`, and `true` makes MelonLoader stop
+before it loads anything of ours. The scripts flip that one line - nothing is renamed, moved or
+reinstalled, so there is no half-switched state to end up in.
+
+Two files in the game folder, one click each:
 
 | File | What it does |
 | --- | --- |
-| `Play Modded.bat` | items on, then launches the game |
-| `Play Vanilla.bat` | stock game, then launches the game |
+| `Play Modded.bat` | turns the mod on and starts the game |
+| `Play Vanilla.bat` | turns it off and starts the stock game |
 
-Or drive it directly:
+Put shortcuts to them wherever is convenient - desktop, taskbar, Start menu. Or drive the
+switch directly:
 
 ```
 powershell -File switch-mod.ps1            # which mode am I in?
@@ -35,37 +66,5 @@ powershell -File switch-mod.ps1 vanilla    # switch, do not launch
 powershell -File switch-mod.ps1 toggle -Launch
 ```
 
-Put shortcuts to the two `.bat` files wherever is convenient - desktop, taskbar, Start menu.
-
-## Steam Deck
-
-`switch-mod.sh` is the same thing for the Deck. It finds the game itself, including on an SD
-card; override with `PUMMEL_DIR=... ./switch-mod.sh` if it cannot.
-
-```
-./switch-mod.sh              # which mode am I in?
-./switch-mod.sh vanilla
-./switch-mod.sh modded --launch
-```
-
-Leave the launch options alone once set:
-
-```
-WINEDLLOVERRIDES="version=n,b" %command%
-```
-
-That only *allows* MelonLoader to load - `Loader.cfg` decides whether it does. Keeping the
-override permanent means the Deck and the PC are switched the same way, with one habit rather
-than two.
-
-To reach the switch from Game Mode without a keyboard, add `switch-mod.sh` to Steam as a
-non-Steam game twice, once with `modded --launch` and once with `vanilla --launch` as its
-arguments. Both then sit on the Deck's library alongside the game itself.
-
-## Telling which mode you are in
-
-When the mod is on, MelonLoader opens its console window alongside the game and the log
-records `=== PummelCustomItems loaded ===`. In stock mode there is no console at all, which
-is the quickest check before joining anyone.
-
-`switch-mod.ps1` and `switch-mod.sh` with no argument also just print the current mode.
+The scripts find the game themselves from Steam's own list of library folders, whichever drive
+it is on.

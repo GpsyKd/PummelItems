@@ -160,7 +160,7 @@ namespace PummelCustomItems
             m_line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             m_line.receiveShadows = false;
 
-            m_lineMat = new Material(sh != null ? sh : Shader.Find("Standard"));
+            m_lineMat = OwnedAssets.Own(gameObject, new Material(sh != null ? sh : Shader.Find("Standard")));
             m_line.material = m_lineMat;
 
             // Thick and solid where the item leaves the hand, thin and faint at the far end -
@@ -208,7 +208,7 @@ namespace PummelCustomItems
                 tris[i * 6 + 3] = a; tris[i * 6 + 4] = d; tris[i * 6 + 5] = c;
             }
 
-            Mesh mesh = new Mesh { name = "PCI_LandRing" };
+            Mesh mesh = OwnedAssets.Own(gameObject, new Mesh { name = "PCI_LandRing" });
             mesh.vertices = verts;
             mesh.triangles = tris;
             mesh.RecalculateNormals();
@@ -219,7 +219,7 @@ namespace PummelCustomItems
             ring.AddComponent<MeshFilter>().sharedMesh = mesh;
 
             MeshRenderer mr = ring.AddComponent<MeshRenderer>();
-            m_markerMat = new Material(sh != null ? sh : Shader.Find("Standard"));
+            m_markerMat = OwnedAssets.Own(gameObject, new Material(sh != null ? sh : Shader.Find("Standard")));
             m_markerMat.color = new Color(m_color.r, m_color.g, m_color.b, 0.4f);
             mr.material = m_markerMat;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;

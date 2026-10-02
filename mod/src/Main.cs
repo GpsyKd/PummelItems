@@ -1,26 +1,31 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(PummelCustomItems.Core), "PummelCustomItems", "0.48.0", "local")]
+[assembly: MelonInfo(typeof(PummelCustomItems.Core), "PummelCustomItems", PummelCustomItems.Core.Version, "local")]
 [assembly: MelonGame("Rebuilt Games", "Pummel Party")]
 
 namespace PummelCustomItems
 {
     public class Core : MelonMod
     {
+        /// <summary>Also part of the network version tag - see Patch_GameVersion.</summary>
+        internal const string Version = "0.52.0";
+
         internal static Core Instance;
 
         public override void OnInitializeMelon()
         {
             Instance = this;
+            ModLog.Open();
+            HeldPoses.ReloadFile();
             LoggerInstance.Msg("=== PummelCustomItems loaded ===");
             LoggerInstance.Msg("Unity: " + Application.unityVersion);
             LoggerInstance.Msg("Game dir: " + Directory.GetCurrentDirectory());
-            LoggerInstance.Msg("Debug keys: F7 = show health, F8 = hurt self, F9 = give all items, F10 = log items");
+            LoggerInstance.Msg("Debug keys: " + DebugKeys.Help);
 
             // The game's own Debug.LogError output goes to Unity's Player.log, not here.
             // Mirror errors into the Melon log so a broken board action is visible at once.
@@ -54,14 +59,14 @@ namespace PummelCustomItems
                 s_repeatCount = 0;
             }
 
-            Instance.LoggerInstance.Warning("[UNITY " + type + "] " + condition);
+            Warn("[UNITY " + type + "] " + condition);
             if (!string.IsNullOrEmpty(stackTrace))
             {
                 string[] lines = stackTrace.Split('\n');
                 for (int i = 0; i < lines.Length && i < 6; i++)
                 {
                     if (lines[i].Trim().Length > 0)
-                        Instance.LoggerInstance.Warning("    " + lines[i].TrimEnd());
+                        Warn("    " + lines[i].TrimEnd());
                 }
             }
         }
@@ -69,16 +74,78 @@ namespace PummelCustomItems
         public override void OnUpdate()
         {
             DebugKeys.Update();
+            PoseStudio.Update();
         }
 
         internal static void Log(string msg)
         {
             if (Instance != null) Instance.LoggerInstance.Msg(msg);
+            ModLog.Write("", msg);
         }
 
         internal static void Warn(string msg)
         {
             if (Instance != null) Instance.LoggerInstance.Warning(msg);
+            ModLog.Write("WARN ", msg);
+        }
+    }
+
+    /// <summary>
+    /// The mod's own log, one file per session in UserData/PummelCustomItems/logs.
+    ///
+    /// MelonLoader's log cannot be relied on to still exist after the next launch. It keeps
+    /// ten and deletes the "oldest" by FILE NAME - and its names have no leading zeros, so
+    /// from October "26-10-1_..." sorts before "26-8-20_...", and every launch deleted the
+    /// newest previous log while the August ones stayed. That is how the one log that would
+    /// have explained the grenade timing was lost.
+    ///
+    /// Here the name is a zero-padded timestamp, so name order and time order agree, old
+    /// files are pruned by their write time anyway, and every line is flushed as it is
+    /// written so a crash does not take the end of the log with it.
+    /// </summary>
+    internal static class ModLog
+    {
+        private const int Keep = 40;
+        private static StreamWriter s_writer;
+
+        internal static void Open()
+        {
+            try
+            {
+                string dir = Path.Combine(Path.Combine(Path.Combine(
+                    Directory.GetCurrentDirectory(), "UserData"), "PummelCustomItems"), "logs");
+                Directory.CreateDirectory(dir);
+                Prune(dir);
+
+                string file = Path.Combine(dir, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") + ".log");
+                s_writer = new StreamWriter(file, false, new UTF8Encoding(false));
+                s_writer.AutoFlush = true;
+                s_writer.WriteLine("PummelItems " + Core.Version + ", started " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            }
+            catch (Exception e)
+            {
+                s_writer = null;
+                if (Core.Instance != null) Core.Instance.LoggerInstance.Warning("own log unavailable: " + e.Message);
+            }
+        }
+
+        internal static void Write(string level, string msg)
+        {
+            if (s_writer == null) return;
+            try { s_writer.WriteLine("[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + level + msg); }
+            catch { }
+        }
+
+        private static void Prune(string dir)
+        {
+            FileInfo[] files = new DirectoryInfo(dir).GetFiles("*.log");
+            if (files.Length < Keep) return;
+
+            Array.Sort(files, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+            for (int i = Keep - 1; i < files.Length; i++)
+            {
+                try { files[i].Delete(); } catch { }
+            }
         }
     }
 

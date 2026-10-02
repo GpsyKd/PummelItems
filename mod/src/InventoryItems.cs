@@ -7,12 +7,29 @@ namespace PummelCustomItems
 {
     /// <summary>
     /// Shared shape for items that just do something and finish - no aiming, no projectile.
-    /// Everything happens server-side; the base Item class already relays the use itself.
+    ///
+    /// Perform() runs on EVERY machine, the way the game's own items work. The owner relays
+    /// the use with a seed, and Item.Use reseeds `rand` from it, so every machine draws the
+    /// same numbers and reaches the same decision. Health, keys, movement, board rules,
+    /// sounds and text are then applied everywhere: the game expects that - a client keeps a
+    /// local copy of health, and GiveGold only changes the number on the host but shows its
+    /// effect on every screen.
+    ///
+    /// The exceptions are things the game syncs from the host itself - inventory counts and
+    /// spawned network objects. Doing those on a client would double them, so subclasses wrap
+    /// them in <see cref="Authority"/>.
+    ///
+    /// This used to run on the host only. In local play that is the same thing, which is why
+    /// it never showed; online, every effect that is not synced by the game happened on the
+    /// host's screen and nowhere else.
     /// </summary>
     public abstract class InstantItem : Item
     {
         protected abstract void Perform();
         protected virtual float FinishDelay { get { return 0.5f; } }
+
+        /// <summary>True on the machine whose word is final for synced state.</summary>
+        protected static bool Authority { get { return NetSystem.IsServer; } }
 
         public override void Setup()
         {
@@ -35,13 +52,8 @@ namespace PummelCustomItems
 
         private IEnumerator Run()
         {
-            // Inventory and key counts are server-authoritative; clients would only make a
-            // mess of them, and the result reaches them through the usual sync.
-            if (NetSystem.IsServer)
-            {
-                try { Perform(); }
-                catch (System.Exception e) { Core.Warn(GetType().Name + " failed: " + e); }
-            }
+            try { Perform(); }
+            catch (System.Exception e) { Core.Warn(GetType().Name + " failed: " + e); }
 
             yield return new WaitForSeconds(FinishDelay);
             Finish(relay: false);
@@ -96,8 +108,12 @@ namespace PummelCustomItems
             byte myIndex = details.itemIndex;
             if (mine[myIndex] > 0) mine[myIndex]--;
 
-            me.SetInventory(theirs);
-            victim.SetInventory(mine);
+            // Inventories are synced from the host; a client writing them would only fight it.
+            if (Authority)
+            {
+                me.SetInventory(theirs);
+                victim.SetInventory(mine);
+            }
 
             Say(me, "Обмен!");
             Say(victim, "Обмен!");
@@ -128,10 +144,12 @@ namespace PummelCustomItems
             }
 
             int pick = owned[rand.Next(0, owned.Count)];
-            byte before = me.inventory[pick];
-            if (before >= byte.MaxValue) return;
+            if (me.inventory[pick] >= byte.MaxValue) return;
 
-            me.EditInventory(pick, (byte)(before + 1));
+            // GiveItem is how the game itself hands out an item: the pop-up effect and its
+            // record of what each player has had happen on every machine, the count only on
+            // the host. Editing the inventory directly skipped the first two everywhere.
+            me.GiveItem((byte)pick);
 
             ItemDetails copied = GameManager.GetItemFromItemIndex(pick);
             string name = (copied != null) ? copied.TranslatedName : ("#" + pick);
@@ -154,21 +172,70 @@ namespace PummelCustomItems
                 byte count = me.inventory[i];
                 if (count == 0) continue;
                 scrapped += count;
-                me.EditInventory(i, 0);
+                if (Authority) me.EditInventory(i, 0);
             }
 
-            // The junk shop itself went into the melt, so it never comes back out.
-            ItemDetails prize = GameManager.ItemList.GetRandomItem(me);
+            ItemDetails prize = PickPrize(me);
             if (prize == null)
             {
                 Core.Warn("JunkShop: no item to hand out");
                 return;
             }
 
-            me.GiveItem(prize.itemIndex);
+            me.GiveItem((byte)prize.itemIndex);
             Say(me, prize.TranslatedName + "!");
             ModAssets.Play("snd_dice_ready", 0.9f);
             Core.Log("JunkShop: melted " + scrapped + " item(s) into " + prize.itemNameToken);
+        }
+
+        /// <summary>
+        /// The same pool and weights as ItemList.GetRandomItem - ordinary items only, and ones
+        /// the player has already had much less likely - with two differences.
+        ///
+        /// The junk shop itself is left out. The comment here always claimed it was, but
+        /// GetRandomItem never knew to skip it, so melting everything could hand back another
+        /// junk shop.
+        ///
+        /// And the draw comes from this item's own `rand`, which every machine seeds the same
+        /// way. GetRandomItem draws from GameManager.rand, the game's shared generator, so
+        /// calling it on every machine would advance that on clients the host never asked for.
+        /// </summary>
+        private ItemDetails PickPrize(BoardPlayer me)
+        {
+            ItemDetails[] pool = GameManager.ItemList.enabledItems;
+            if (pool == null) return null;
+
+            List<ItemDetails> candidates = new List<ItemDetails>();
+            List<float> weights = new List<float>();
+            float total = 0f;
+
+            for (int i = 0; i < pool.Length; i++)
+            {
+                ItemDetails d = pool[i];
+                if (d == null || d.weaponSpaceItem) continue;
+                if (d.itemIndex == details.itemIndex) continue;
+
+                float w = 1f;
+                try
+                {
+                    byte had = me.ObtainedInventory[d.itemIndex];
+                    w = (had == 0) ? 1f : (had == 1) ? 0.1f : (had == 2) ? 0.03f : 0.01f;
+                }
+                catch { }
+
+                candidates.Add(d);
+                weights.Add(w);
+                total += w;
+            }
+            if (candidates.Count == 0) return null;
+
+            double roll = rand.NextDouble() * total;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                roll -= weights[i];
+                if (roll <= 0) return candidates[i];
+            }
+            return candidates[candidates.Count - 1];
         }
     }
 

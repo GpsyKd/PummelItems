@@ -49,6 +49,18 @@ namespace PummelCustomItems
             return s_pending.ContainsKey(playerID) || s_live.ContainsKey(playerID);
         }
 
+        internal static void Reset()
+        {
+            s_pending.Clear();
+            s_live.Clear();
+        }
+
+        /// <summary>Drops a live charge without using it - see Patch_BoardPlayer_HitDice.</summary>
+        internal static void DrainLive(short playerID)
+        {
+            s_live.Remove(playerID);
+        }
+
         internal static void OnTurnStarted(short playerID, BoardPlayer who)
         {
             Pending p;
@@ -153,17 +165,80 @@ namespace PummelCustomItems
         }
     }
 
+    /// <summary>
+    /// Everything that lasts "until somebody's next turn" lives in static fields, which
+    /// outlive the board they were armed on. GameBoardController is created once per board
+    /// game and kept alive through the minigames (they disable it, they do not destroy it),
+    /// so its Awake is exactly "a new game is starting". Without this a game that ended mid
+    /// effect handed it to the next one: lying signposts from the first move, and a pending
+    /// dice charge firing on the turn-order roll.
+    /// </summary>
+    [HarmonyPatch(typeof(GameBoardController), "Awake")]
+    internal static class Patch_GameBoardController_Awake
+    {
+        private static void Postfix()
+        {
+            try
+            {
+                DiceOverride.Reset();
+                TempModifiers.Clear();
+                PiggyBank.Reset();
+                FakeSignpost.Reset();
+                Core.Log("new board: temporary effects reset");
+            }
+            catch (Exception e)
+            {
+                Core.Warn("board reset failed: " + e);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Bends the roll where it is made: on the machine that rolls for that player - the
+    /// player's own for a human, the host's for a bot. The changed number then travels inside
+    /// the action, so every machine moves the player the same distance.
+    /// </summary>
     [HarmonyPatch(typeof(ActionHitDice), MethodType.Constructor, new[] { typeof(short), typeof(byte) })]
     internal static class Patch_ActionHitDice_ctor
     {
         private static void Prefix(short _player_id, ref byte _roll_number)
         {
+            // An action arriving over the network is first built empty, as (0, 0), and filled
+            // in afterwards (GameBoardController, where it decodes a received action). A real
+            // roll is never 0, so this is that empty shell - and consuming a charge here would
+            // spend player 0's on a roll that is not theirs.
+            if (_roll_number == 0) return;
+
             byte forced;
             if (!DiceOverride.Consume(_player_id, _roll_number, out forced)) return;
 
             Core.Log("DiceOverride: roll " + _roll_number + " -> " + forced +
                      " for player " + _player_id);
             _roll_number = forced;
+        }
+    }
+
+    /// <summary>
+    /// Every machine plays the roll out, so every machine clears its copy of the charge here.
+    ///
+    /// Charges are armed everywhere, because items run everywhere; but only the machine that
+    /// makes the roll consumes one (above). Without this the others would keep a stale charge
+    /// for that player indefinitely. The value is not touched: it already arrived changed.
+    /// </summary>
+    [HarmonyPatch(typeof(BoardPlayer), "HitDice")]
+    internal static class Patch_BoardPlayer_HitDice
+    {
+        private static void Prefix(BoardPlayer __instance)
+        {
+            try
+            {
+                if (__instance == null || __instance.GamePlayer == null) return;
+                DiceOverride.DrainLive(__instance.GamePlayer.GlobalID);
+            }
+            catch (Exception e)
+            {
+                Core.Warn("HitDice hook failed: " + e.Message);
+            }
         }
     }
 }
