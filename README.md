@@ -53,15 +53,16 @@ Item names and descriptions are in Russian in-game.
 curl -sL https://raw.githubusercontent.com/GpsyKd/PummelItems/main/install-deck.sh | bash
 ```
 
-It also sets up a small launcher that asks "with the mod or without" every time the game
-starts, so there is still one Pummel Party in the library. Details in [SWITCHING.md](SWITCHING.md).
+It also sets up a launch menu in the style of Steam's own - play with the mod, without it, or
+cancel - shown every time the game starts, so there is still one Pummel Party in the library.
+Details in [SWITCHING.md](SWITCHING.md).
 
 Building it yourself instead is described below.
 
 ## Playing online
 
 **With people who do not have the mod: turn it off first.** On Windows that is
-`Play Vanilla.bat`; on a Steam Deck, the "Без мода" button as the game starts. Neither
+`Play Vanilla.bat`; on a Steam Deck, "Играть без мода" in the menu as the game starts. Neither
 uninstalls anything. You cannot get this wrong by accident: the mod adds itself to the game's
 version number, and the game refuses to mix modded and stock players, showing its ordinary
 "version mismatch" message.
@@ -72,8 +73,8 @@ on every machine from the same shared random seed, and the fake signpost picks t
 everywhere. That has not yet been tested on two machines, so treat it as a first try, and
 please report how it goes. Different mod versions are refused at the door, the same way.
 
-The version number in the corner of the main menu says which mode you are in: it ends in
-`+PummelItems...` when the mod is loaded.
+The version label in the corner of the main menu says which mode you are in: with the mod
+loaded, a small second line reads `PummelItems <version>`.
 
 ## Building
 

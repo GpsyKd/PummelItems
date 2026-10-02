@@ -90,9 +90,9 @@ chmod +x "$GAME/switch-mod.sh" 2>/dev/null || true
 
 # ---------------------------------------------------------------- the launch choice
 
-# One game in the library, with the choice made as it starts: a small dialog with two
-# buttons, "with the mod" and "without", and the last choice preselected - left alone for a
-# few seconds, it starts the game the way it did last time.
+# One game in the library, with the choice made as it starts: deck/picker.py, a menu in the
+# style of Steam's own launch-option one - "with the mod", "without", "cancel" - with the last
+# choice preselected. Left alone for a few seconds, it starts the game the way it did last time.
 #
 # "Without" is the stock game, not a dormant mod. The wrapper simply does not set
 # WINEDLLOVERRIDES, so Proton uses its own built-in version.dll and never loads MelonLoader
@@ -102,6 +102,17 @@ say "Installing the launch choice"
 HOME_DIR="$HOME/.local/share/pummelitems"
 mkdir -p "$HOME_DIR"
 printf '%s\n' "$GAME" > "$HOME_DIR/game_dir"
+
+# The picker is plain Python on libX11, both always on SteamOS; zenity is not.
+RAW="https://raw.githubusercontent.com/$MOD_REPO/main/deck"
+for f in picker.py picker-art.txt; do
+    if curl -sfL "$RAW/$f" -o "$HOME_DIR/$f.new" && [ -s "$HOME_DIR/$f.new" ]; then
+        mv -f "$HOME_DIR/$f.new" "$HOME_DIR/$f"
+    else
+        rm -f "$HOME_DIR/$f.new"
+        warn "Could not download $f - without it the game starts without asking."
+    fi
+done
 [ -f "$HOME_DIR/mode" ] || printf 'modded\n' > "$HOME_DIR/mode"
 
 cat > "$HOME_DIR/launch.sh" <<'LAUNCH'
@@ -114,7 +125,7 @@ DIR="$HOME/.local/share/pummelitems"
 LOG="$DIR/launch.log"
 LAST="$(cat "$DIR/mode" 2>/dev/null || echo modded)"
 [ "$LAST" = vanilla ] || LAST=modded
-WAIT=10
+WAIT=12
 APPID="${SteamGameId:-${SteamAppId:-880940}}"
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$LOG" 2>/dev/null; }
@@ -198,30 +209,31 @@ x.XCloseDisplay(d)
 PY
 }
 
-if [ "$LAST" = modded ]; then LAST_TEXT="с модом"; else LAST_TEXT="без мода"; fi
-TEXT="Как запустить Pummel Party?
+choice=""
+code=2
+PICKER="$DIR/picker.py"
+if [ -f "$PICKER" ] && command -v python3 >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+    # In Game Mode it covers the whole screen, as Steam's own menu does; on the desktop it is
+    # a window. timeout is only a guard against a hang - the picker has its own countdown.
+    FULL=""; [ "$GAMEMODE" = 1 ] && FULL="--fullscreen"
+    answer="$(timeout $((WAIT + 30)) python3 "$PICKER" --last "$LAST" --wait "$WAIT" --appid "$APPID" $FULL 2>>"$LOG")"
+    code=$?
+    log "dialog: picker exit $code, answer '${answer}'"
+    case "$answer" in
+        modded|vanilla) choice="$answer" ;;
+        cancel) log "cancelled - the game is not started"; exit 0 ;;
+    esac
+else
+    log "dialog: picker not available (file: $([ -f "$PICKER" ] && echo yes || echo no), python3: $(command -v python3 || echo none), DISPLAY: ${DISPLAY:-none})"
+fi
+
+# Should the picker itself fail, kdialog where there is one - marked for gamescope too.
+if [ -z "$choice" ] && [ "$code" != 0 ] && command -v kdialog >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+    if [ "$LAST" = modded ]; then LAST_TEXT="с модом"; else LAST_TEXT="без мода"; fi
+    TEXT="Как запустить Pummel Party?
 
 Если ничего не нажимать, через $WAIT с запустится как в прошлый раз: $LAST_TEXT."
-
-# Bigger in Game Mode, where it is tapped on the screen.
-SCALE=1; [ "$GAMEMODE" = 1 ] && SCALE=2
-
-choice=""
-ZENITY="$(command -v zenity || ls "$HOME"/.local/share/Steam/ubuntu12_32/steam-runtime/usr/bin/zenity "$HOME"/.local/share/Steam/ubuntu12_32/steam-runtime/*/usr/bin/zenity 2>/dev/null | head -1)"
-if [ -n "$ZENITY" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
-    # zenity: OK = with the mod, Cancel = without, 5 = timed out.
-    GDK_SCALE=$SCALE "$ZENITY" --question --title="Pummel Party" --text="$TEXT" \
-        --ok-label="С модом" --cancel-label="Без мода" --timeout="$WAIT" --width=420 2>>"$LOG" &
-    pid=$!
-    [ "$GAMEMODE" = 1 ] && mark_for_gamescope "$pid" &
-    wait "$pid"; code=$?
-    log "dialog: zenity ($ZENITY) exit $code"
-    case $code in
-        0) choice=modded ;;
-        1) choice=vanilla ;;
-    esac
-elif command -v kdialog >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
-    # kdialog has no timeout of its own, so one is supplied.
+    SCALE=1; [ "$GAMEMODE" = 1 ] && SCALE=2
     QT_SCALE_FACTOR=$SCALE kdialog --title "Pummel Party" --yes-label "С модом" --no-label "Без мода" \
         --yesno "$TEXT" 2>>"$LOG" &
     pid=$!
@@ -235,8 +247,6 @@ elif command -v kdialog >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-
         0) choice=modded ;;
         1) choice=vanilla ;;
     esac
-else
-    log "dialog: none to show (zenity: ${ZENITY:-none}, kdialog: $(command -v kdialog || echo none))"
 fi
 
 # No dialog, no answer, or no screen to show one on: the last choice. The game always starts.
@@ -279,6 +289,12 @@ for f in "version.dll" "Mods/PummelCustomItems.dll" "UserData/PummelCustomItems/
     fi
 done
 [ -x "$HOME_DIR/launch.sh" ] && printf '    ok      launch.sh\n' || ok=0
+# Drawing its menu into a picture needs no screen, so this checks the picker can run at all.
+if python3 "$HOME_DIR/picker.py" --preview "$TMP/picker.png" >/dev/null 2>&1; then
+    printf '    ok      picker\n'
+else
+    printf '    PROBLEM picker - the game will start without asking\n'
+fi
 [ "$ok" = 1 ] || die "Something did not land. Nothing has been broken - just run this again."
 
 printf '\n\033[1;32mDone.\033[0m\n'
@@ -333,10 +349,12 @@ cat <<EOF
 
 Every time Pummel Party starts, it then asks:
 
-    [ С модом ]   our items, for local play
-    [ Без мода ]  the stock game, for playing online - MelonLoader does not load at all
+    Играть с модом    our items, for local play
+    Играть без мода   the stock game, for playing online - MelonLoader does not load at all
+    Отмена            back to the library
 
-Tap one on the screen, or leave it and in 10 seconds it starts the way it did last time.
+Choose with the controller (D-pad, A) or tap it. Left alone, it starts the way it did last
+time once the countdown under the menu runs out.
 If the question never shows up, the log of every launch is here:
 
     $HOME_DIR/launch.log

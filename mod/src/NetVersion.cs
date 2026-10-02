@@ -1,5 +1,7 @@
 using System;
 using HarmonyLib;
+using I2.Loc;
+using TMPro;
 
 namespace PummelCustomItems
 {
@@ -18,8 +20,7 @@ namespace PummelCustomItems
     ///   offer games that would work.</item>
     /// </list>
     /// It also makes it impossible to wander into a stranger's online game with the mod still
-    /// on. And the version label in the menu corner reads "...+PummelItems" exactly when the
-    /// mod is loaded, which is a truthful way of telling which mode the game is in.
+    /// on.
     /// </summary>
     [HarmonyPatch(typeof(GameManager), "VERSION", MethodType.Getter)]
     internal static class Patch_GameVersion
@@ -54,6 +55,34 @@ namespace PummelCustomItems
         {
             Patch_GameVersion.Suppress = false;
             return __exception;
+        }
+    }
+
+    /// <summary>
+    /// The version label in the main menu's corner. The game prints GameManager.VERSION there,
+    /// and with the tag the line grew long enough to run off the edge of the Steam Deck's
+    /// screen. So the label keeps the game's own version on its line, as long as it always
+    /// was, and the mod goes underneath, small, in place of the build stamp. It is there
+    /// exactly when the mod is loaded, which makes it a truthful way of telling the two
+    /// modes apart.
+    /// </summary>
+    [HarmonyPatch(typeof(GetGameVersion), "UpdateVersionText")]
+    internal static class Patch_GetGameVersion
+    {
+        private static bool Prefix(GetGameVersion __instance)
+        {
+            TextMeshProUGUI text;
+            if (!__instance.TryGetComponent(out text)) return true;
+
+            string stock;
+            Patch_GameVersion.Suppress = true;
+            try { stock = GameManager.VERSION; }
+            finally { Patch_GameVersion.Suppress = false; }
+
+            text.text = string.Format("{0} {1}\n<size=12>PummelItems {2}</size>",
+                                      LocalizationManager.GetTranslation("Version"), stock, Core.Version);
+            Core.Log("version label: " + text.text.Replace("\n", " | "));
+            return false;
         }
     }
 }

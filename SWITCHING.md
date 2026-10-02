@@ -5,12 +5,14 @@ exactly as they have it. Both are one click away, and neither involves uninstall
 
 ## Telling which mode you are in
 
-Look at the version number in the corner of the main menu. With the mod loaded it ends in
-`+PummelItems.<version>`; the stock game shows the plain number.
+Look at the version label in the corner of the main menu. With the mod loaded, a second, small
+line under the game's version reads `PummelItems <version>`; the stock game shows a build
+number there instead.
 
-That label is not decoration: it is the version the game compares when someone joins. So the
-game itself refuses to mix modded and stock players, or two different versions of the mod, and
-shows its ordinary "version mismatch" message instead of letting a session fall apart.
+Behind that label the mod also adds itself to the version the game compares when someone
+joins. So the game itself refuses to mix modded and stock players, or two different versions
+of the mod, and shows its ordinary "version mismatch" message instead of letting a session
+fall apart.
 
 ## Steam Deck
 
@@ -27,31 +29,37 @@ whatever is there with the line the installer prints, which looks like
 /home/deck/.local/share/pummelitems/launch.sh %command%
 ```
 
-From then on Pummel Party asks every time it starts:
+The installer reads Steam's settings and says whether that is already done.
 
-| Button | What you get |
+From then on, every time Pummel Party starts, a menu in the style of Steam's own launch-option
+menu asks how:
+
+| Choice | What you get |
 | --- | --- |
-| **С модом** | our items, for local play |
-| **Без мода** | the stock game, for playing online |
+| **Играть с модом** | our items, for local play |
+| **Играть без мода** | the stock game, for playing online |
+| **Отмена** | back to the library, nothing started |
 
-Tap one on the screen, or leave it, and after ten seconds it starts the way it did last time.
-There is still one Pummel Party in the library.
+Choose with the D-pad or the stick and A (B backs out), or tap it on the screen. Left alone, it
+starts the way it did last time when the countdown under the menu runs out. There is still one
+Pummel Party in the library.
 
-In Game Mode the screen belongs to gamescope, which shows only windows marked as part of the
-game being played - an ordinary dialog runs there unseen. The launcher marks its question with
-the game's id (the `STEAM_GAME` window property), so it appears over the game's start-up.
-Every launch is logged in `~/.local/share/pummelitems/launch.log`: which mode was chosen, how,
-and whether the question could be shown.
+"Играть без мода" is genuinely stock: the launcher does not set the one setting that lets
+Proton load MelonLoader's `version.dll`, so MelonLoader never starts at all.
 
-Steam's own "choose a launch option" menu is not used on purpose: it lists only the launch
-options the game's developer registered with Steam, and an extra one added to Steam's cache by
-hand is silently dropped whenever Steam refreshes the game's details.
+How it works, for when it does not:
 
-"Без мода" is genuinely stock: the launcher does not set the one setting that lets Proton load
-MelonLoader's `version.dll`, so MelonLoader never starts at all.
-
-If the dialog ever fails to appear, the game still starts, in the last mode used. To change it
-by hand, edit `~/.local/share/pummelitems/mode` (`modded` or `vanilla`).
+- The menu is `deck/picker.py`: plain Python on libX11, which SteamOS always has. Zenity, which
+  an earlier version used, is not on SteamOS, and the copy inside Steam is too old.
+- In Game Mode the screen belongs to gamescope, which shows only windows that carry the
+  `STEAM_GAME` property. The menu sets it to the game's id, so it is shown as part of the game
+  starting.
+- Every launch is logged in `~/.local/share/pummelitems/launch.log`: what was chosen, how, and
+  why the menu could not be shown if it could not. Without a menu the game still starts, in the
+  last mode used, which is kept in `~/.local/share/pummelitems/mode` (`modded` or `vanilla`).
+- Steam's real launch-option menu cannot be borrowed: it lists only the options the game's
+  developer registered with Steam, and an entry added to Steam's cache by hand is dropped
+  whenever Steam refreshes the game's details.
 
 ## Windows
 

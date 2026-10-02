@@ -34,6 +34,7 @@ $refs = @(
     "$managed\UnityEngine.AnimationModule.dll"
     "$managed\UnityEngine.AudioModule.dll"
     "$managed\UnityEngine.UI.dll"
+    "$managed\Unity.TextMeshPro.dll"
     "$managed\Unity.Addressables.dll"
     "$managed\Unity.ResourceManager.dll"
     "$managed\mscorlib.dll"
