@@ -74,7 +74,7 @@ everywhere. That has not yet been tested on two machines, so treat it as a first
 please report how it goes. Different mod versions are refused at the door, the same way.
 
 The version label in the corner of the main menu says which mode you are in: with the mod
-loaded, a small second line reads `PummelItems <version>`.
+loaded, a second line in gold reads `PummelItems <version>`.
 
 ## Building
 

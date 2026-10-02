@@ -13,7 +13,7 @@ namespace PummelCustomItems
     public class Core : MelonMod
     {
         /// <summary>Also part of the network version tag - see Patch_GameVersion.</summary>
-        internal const string Version = "0.52.1";
+        internal const string Version = "0.52.2";
 
         internal static Core Instance;
 

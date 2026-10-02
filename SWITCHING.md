@@ -5,9 +5,9 @@ exactly as they have it. Both are one click away, and neither involves uninstall
 
 ## Telling which mode you are in
 
-Look at the version label in the corner of the main menu. With the mod loaded, a second, small
-line under the game's version reads `PummelItems <version>`; the stock game shows a build
-number there instead.
+Look at the version label in the corner of the main menu. With the mod loaded, a second line
+in gold under the game's version reads `PummelItems <version>`; the stock game shows a tiny
+build number there instead.
 
 Behind that label the mod also adds itself to the version the game compares when someone
 joins. So the game itself refuses to mix modded and stock players, or two different versions

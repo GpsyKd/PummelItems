@@ -79,7 +79,9 @@ namespace PummelCustomItems
             try { stock = GameManager.VERSION; }
             finally { Patch_GameVersion.Suppress = false; }
 
-            text.text = string.Format("{0} {1}\n<size=12>PummelItems {2}</size>",
+            // The second line sits where the game's tiny build stamp was, but large enough to
+            // read on the Deck and in a colour that says it is not the game's own.
+            text.text = string.Format("{0} {1}\n<size=18><color=#FFC940>PummelItems {2}</color></size>",
                                       LocalizationManager.GetTranslation("Version"), stock, Core.Version);
             Core.Log("version label: " + text.text.Replace("\n", " | "));
             return false;
