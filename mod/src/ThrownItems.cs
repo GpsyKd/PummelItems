@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using ZP.Net;
 
@@ -142,15 +143,13 @@ namespace PummelCustomItems
             Finish(relay: false);
         }
         /// <summary>
-        /// The opponent best lined up with the aim: inside the wedge, nearest first.
-        /// Null when nobody qualifies, which the caller should report rather than silently
-        /// waste the item.
+        /// Every opponent inside the wedge. Empty when nobody qualifies, which the caller
+        /// should report rather than silently waste the item.
         /// </summary>
-        protected BoardPlayer PickTarget(Vector3 dir, float reach, float halfAngle)
+        protected List<BoardPlayer> PickTargets(Vector3 dir, float reach, float halfAngle)
         {
             BoardPlayer me = player.BoardObject;
-            BoardPlayer best = null;
-            float bestDist = float.MaxValue;
+            List<BoardPlayer> found = new List<BoardPlayer>();
 
             for (int i = 0; i < GameManager.PlayerCount; i++)
             {
@@ -166,9 +165,9 @@ namespace PummelCustomItems
                 if (dist > reach) continue;
                 if (Vector3.Angle(dir, delta) > halfAngle) continue;
 
-                if (dist < bestDist) { bestDist = dist; best = gp.BoardObject; }
+                found.Add(gp.BoardObject);
             }
-            return best;
+            return found;
         }
 
         /// <summary>

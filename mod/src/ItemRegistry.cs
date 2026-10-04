@@ -244,11 +244,11 @@ namespace PummelCustomItems
                 "PCI_I_Piggy", typeof(PiggyBankItem), "Piggy", 0.7f, 2.4f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 19, "Проклятие",
-                "Наводится на игрока. Его следующий бросок будет единицей.",
+                "Бьёт по сектору: у всех, кто в нём, следующий бросок будет единицей.",
                 "PCI_I_Curse", typeof(CurseItem), "Curse", 0.8f, 2.2f, tier: 3);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 20, "Заморозка",
-                "Наводится на игрока. Его следующий бросок будет нулём — ход впустую.",
+                "Бьёт по сектору: у всех, кто в нём, следующий бросок будет нулём — ход впустую.",
                 "PCI_I_Freeze", typeof(FreezeItem), "Freeze", 0.8f, 2.4f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 21, "Двойной ход",
@@ -260,11 +260,11 @@ namespace PummelCustomItems
                 "PCI_I_Grapple", typeof(GrappleItem), "Grapple", 0.8f, 2.4f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 23, "Пинок",
-                "Наводится на игрока и отбрасывает его на четыре клетки назад.",
+                "Бьёт по сектору и отбрасывает всех, кто в нём, на четыре клетки назад.",
                 "PCI_I_Kick", typeof(KickItem), "Boot", 0.8f, 2.2f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 24, "Билет на старт",
-                "Наводится на игрока и отправляет его в начало доски.",
+                "Бьёт по сектору и отправляет всех, кто в нём, в начало доски.",
                 "PCI_I_Ticket", typeof(StartTicketItem), "Ticket", 0.7f, 2.2f, tier: 1);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 25, "Мина",
@@ -280,7 +280,7 @@ namespace PummelCustomItems
                 "PCI_I_Signpost", typeof(FakeSignpostItem), "Signpost", 0.8f, 2.4f, tier: 4);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 28, "Магнит жизни",
-                "Наводится на игрока. Высасывает 30% его здоровья и отдаёт их тебе.",
+                "Бьёт по сектору: высасывает у каждого, кто в нём, 30% здоровья и отдаёт их тебе.",
                 "PCI_I_LifeMagnet", typeof(LifeMagnetItem), "LifeMagnet", 0.8f, 2.2f, tier: 1);
 
             s_extras.Add(new ExtraPrefabDef
