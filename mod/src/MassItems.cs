@@ -68,7 +68,7 @@ namespace PummelCustomItems
         }
     }
 
-    /// <summary>Meteors on everybody, thrower included.</summary>
+    /// <summary>Meteors on everybody, thrower included - who is hurt, but left standing.</summary>
     public class ArmageddonItem : InstantItem
     {
         private const int DamageMin = 9;
@@ -122,20 +122,32 @@ namespace PummelCustomItems
         {
             if (target == null || target.LocalHealth <= 0) return;
 
-            DamageInstance d = new DamageInstance
+            bool self = target == player.BoardObject;
+            if (self)
             {
-                damage = damage,
-                origin = target.transform.position + Vector3.up * 3f,
-                blood = true,
-                ragdoll = true,
-                ragdollVel = 13f,
-                bloodVel = 16f,
-                bloodAmount = 1f,
-                details = "Armageddon",
-                killer = player.BoardObject,
-                removeKeys = true,
-            };
-            target.ApplyDamage(d);
+                int rolled = damage;
+                damage = SelfDamage(target, rolled);
+                Core.Log("Armageddon: the user takes " + damage + " of " + rolled +
+                         " at " + target.LocalHealth + " hp");
+            }
+
+            if (damage > 0)
+            {
+                DamageInstance d = new DamageInstance
+                {
+                    damage = damage,
+                    origin = target.transform.position + Vector3.up * 3f,
+                    blood = true,
+                    ragdoll = !self,   // the user stays on their feet - see SelfDamage
+                    ragdollVel = 13f,
+                    bloodVel = 16f,
+                    bloodAmount = 1f,
+                    details = "Armageddon",
+                    killer = player.BoardObject,
+                    removeKeys = true,
+                };
+                target.ApplyDamage(d);
+            }
 
             Effects.Blast(target.transform.position, 2.6f);
 
@@ -147,6 +159,23 @@ namespace PummelCustomItems
             ModAssets.Play(booms[UnityEngine.Random.Range(0, booms.Length)], 0.8f);
 
             try { GameManager.Board.boardCamera.AddShake(0.45f); } catch { }
+        }
+
+        /// <summary>
+        /// How much of their own meteor the user takes: what it rolled, but never their last
+        /// point of health - which, while every hit kills, means nothing at all.
+        ///
+        /// The rain lands while the item is still in use, and when the item finishes the turn
+        /// goes on to the user's roll. A user who is dead by then, or still sprawled in a
+        /// ragdoll, can neither roll nor walk, and the turn has nowhere to go. Nothing else in
+        /// Armageddon touches the player whose turn it is, which makes this the likeliest
+        /// reading of the board freezing after it. So the user still bleeds and drops keys,
+        /// but is not knocked down and comes out alive.
+        /// </summary>
+        private static int SelfDamage(BoardPlayer user, int rolled)
+        {
+            if (TempModifiers.EveryHitKills()) return 0;
+            return Mathf.Clamp(rolled, 0, (int)user.LocalHealth - 1);
         }
 
         public override ItemAIUse GetTarget(BoardPlayer user)
@@ -284,11 +313,25 @@ namespace PummelCustomItems
             }
 
             if ((transform.position - m_target).sqrMagnitude < 0.05f)
-            {
-                if (m_mark != null) Destroy(m_mark.gameObject);
-                if (m_onImpact != null) m_onImpact();
-                Destroy(gameObject);
-            }
+                Land();
+        }
+
+        /// <summary>
+        /// Lands the rock - once. The callback used to run before the rock was cleared away, so
+        /// a callback that threw left it where it was, to land again on the next frame and the
+        /// one after, running the whole impact every time.
+        /// </summary>
+        private void Land()
+        {
+            Action onImpact = m_onImpact;
+            m_onImpact = null;
+
+            if (m_mark != null) Destroy(m_mark.gameObject);
+            Destroy(gameObject);
+
+            if (onImpact == null) return;
+            try { onImpact(); }
+            catch (Exception e) { Core.Warn("Meteor: impact failed: " + e); }
         }
     }
 

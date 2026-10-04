@@ -34,6 +34,24 @@ namespace PummelCustomItems
             return false;
         }
 
+        /// <summary>
+        /// Whether any hit kills right now. Unlike IsActive this looks at every active rule, the
+        /// game's own included: its one-hit rule and our glass cannons share an id.
+        /// </summary>
+        internal static bool EveryHitKills()
+        {
+            try
+            {
+                foreach (BoardModifier m in BoardModifier.ActiveModifiers)
+                    if (m != null && m.GetGameModifierID() == TempOneHitKill.ID) return true;
+            }
+            catch (System.Exception e)
+            {
+                Core.Warn("modifier scan failed: " + e.Message);
+            }
+            return false;
+        }
+
         internal static void Apply(BoardModifier mod, short untilPlayer, string endLabel)
         {
             BoardModifier.ActiveModifiers.Add(mod);
@@ -81,7 +99,9 @@ namespace PummelCustomItems
     /// <summary>Everyone dies to a single hit. Same id the shipped rule uses.</summary>
     public class TempOneHitKill : BoardModifier
     {
-        protected override int GetModifierID() { return 5; }
+        internal const int ID = 5;
+
+        protected override int GetModifierID() { return ID; }
 
         public override void OnApplyDamage(BoardPlayer target, ref DamageInstance d)
         {
