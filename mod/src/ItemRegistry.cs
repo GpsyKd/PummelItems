@@ -228,11 +228,11 @@ namespace PummelCustomItems
                 "PCI_I_Generosity", typeof(GenerosityItem), "Generosity", 0.7f, 2.4f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 15, "Жезл смерти",
-                "Пятьдесят на пятьдесят: убивает всех остальных — или тебя одного: тогда ход пропадает, а с переходом хода ты погибаешь.",
+                "Пятьдесят на пятьдесят: убивает всех остальных — или тебя одного.",
                 "PCI_I_DeathWand", typeof(DeathWandItem), "DeathWand", 0.8f, 2.2f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 16, "Армагеддон",
-                "Метеоритный дождь: 9–11 урона всем на доске, включая тебя. Твой метеорит упадёт с переходом хода.",
+                "Метеоритный дождь: 9–11 урона всем на доске, включая тебя. Тебя самого не добьёт.",
                 "PCI_I_Armageddon", typeof(ArmageddonItem), "MeteorRock", 0.7f, 2.4f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 17, "Пылесос",
