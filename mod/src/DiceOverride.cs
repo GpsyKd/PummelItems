@@ -157,6 +157,7 @@ namespace PummelCustomItems
                 TempModifiers.OnTurnStarted(id, __instance);
                 PiggyBank.OnTurnStarted(id, __instance);
                 FakeSignpost.OnTurnStarted(id, __instance);
+                Backlash.OnTurnStarted(__instance);
             }
             catch (Exception e)
             {
@@ -184,6 +185,7 @@ namespace PummelCustomItems
                 TempModifiers.Clear();
                 PiggyBank.Reset();
                 FakeSignpost.Reset();
+                Backlash.Reset();
                 Core.Log("new board: temporary effects reset");
             }
             catch (Exception e)

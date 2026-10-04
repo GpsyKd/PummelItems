@@ -21,9 +21,13 @@ namespace PummelCustomItems
 
             if (backfires)
             {
+                // The user dies when the turn has passed - see Backlash - and the turn is spent
+                // in between: the roll it has left comes up zero, so the doomed player goes
+                // nowhere, just as if they had died on the spot.
                 Say(me, "Не тебе решать");
-                Core.Log("DeathWand: backfired on player " + player.GlobalID);
-                StartCoroutine(StrikeAfter(0.9f, new List<BoardPlayer> { me }));
+                DiceOverride.ArmImmediate(player.GlobalID, 0, null);
+                Backlash.Schedule(me, () => StrikeDown(me));
+                Core.Log("DeathWand: backfired on player " + player.GlobalID + ", struck when the turn passes");
             }
             else
             {
@@ -54,6 +58,21 @@ namespace PummelCustomItems
             try { GameManager.Board.boardCamera.AddShake(0.8f); } catch { }
         }
 
+        /// <summary>
+        /// The backfire, once the user's turn is over. Credited to nobody, like a death on a
+        /// hazard space: the user is not their own opponent.
+        /// </summary>
+        private static void StrikeDown(BoardPlayer victim)
+        {
+            // A zero the turn never got round to rolling must not follow them past their death.
+            if (victim.GamePlayer != null) DiceOverride.DrainLive(victim.GamePlayer.GlobalID);
+
+            Effects.Blast(victim.transform.position + Vector3.up, 2f);
+            victim.KillPlayer(null, victim.transform.position + Vector3.up * 2f, 14f);
+            ModAssets.Play("snd_explode", 0.9f);
+            try { GameManager.Board.boardCamera.AddShake(0.8f); } catch { }
+        }
+
         public override ItemAIUse GetTarget(BoardPlayer user)
         {
             // A coin flip is worth taking when you are behind, not when you are winning.
@@ -68,7 +87,10 @@ namespace PummelCustomItems
         }
     }
 
-    /// <summary>Meteors on everybody, thrower included - who is hurt, but left standing.</summary>
+    /// <summary>
+    /// Meteors on everybody, thrower included. The thrower's own comes down once their turn has
+    /// passed - see Backlash.
+    /// </summary>
     public class ArmageddonItem : InstantItem
     {
         private const int DamageMin = 9;
@@ -108,46 +130,47 @@ namespace PummelCustomItems
 
             Core.Log("Armageddon: " + targets.Count + " target(s)");
 
+            BoardPlayer me = player.BoardObject;
+            BoardPlayer killer = me;
+
             // Staggered so it reads as a barrage rather than one simultaneous thud.
             for (int i = 0; i < targets.Count; i++)
             {
                 BoardPlayer t = targets[i];
                 int dmg = damage[i];
-                Meteor.Drop(t.transform.position, () => Impact(t, dmg));
+
+                if (t == me)
+                {
+                    // Credited to nobody, like a death on a hazard space: the user is not
+                    // their own opponent.
+                    Backlash.Schedule(me, () => Meteor.Drop(me.transform.position, () => Impact(me, dmg, null)));
+                    Say(me, "Твой метеорит ещё летит");
+                    continue;
+                }
+
+                Meteor.Drop(t.transform.position, () => Impact(t, dmg, killer));
                 yield return new WaitForSeconds(0.18f);
             }
         }
 
-        private void Impact(BoardPlayer target, int damage)
+        private static void Impact(BoardPlayer target, int damage, BoardPlayer killer)
         {
             if (target == null || target.LocalHealth <= 0) return;
 
-            bool self = target == player.BoardObject;
-            if (self)
+            DamageInstance d = new DamageInstance
             {
-                int rolled = damage;
-                damage = SelfDamage(target, rolled);
-                Core.Log("Armageddon: the user takes " + damage + " of " + rolled +
-                         " at " + target.LocalHealth + " hp");
-            }
-
-            if (damage > 0)
-            {
-                DamageInstance d = new DamageInstance
-                {
-                    damage = damage,
-                    origin = target.transform.position + Vector3.up * 3f,
-                    blood = true,
-                    ragdoll = !self,   // the user stays on their feet - see SelfDamage
-                    ragdollVel = 13f,
-                    bloodVel = 16f,
-                    bloodAmount = 1f,
-                    details = "Armageddon",
-                    killer = player.BoardObject,
-                    removeKeys = true,
-                };
-                target.ApplyDamage(d);
-            }
+                damage = damage,
+                origin = target.transform.position + Vector3.up * 3f,
+                blood = true,
+                ragdoll = true,
+                ragdollVel = 13f,
+                bloodVel = 16f,
+                bloodAmount = 1f,
+                details = "Armageddon",
+                killer = killer,
+                removeKeys = true,
+            };
+            target.ApplyDamage(d);
 
             Effects.Blast(target.transform.position, 2.6f);
 
@@ -161,28 +184,106 @@ namespace PummelCustomItems
             try { GameManager.Board.boardCamera.AddShake(0.45f); } catch { }
         }
 
-        /// <summary>
-        /// How much of their own meteor the user takes: what it rolled, but never their last
-        /// point of health - which, while every hit kills, means nothing at all.
-        ///
-        /// The rain lands while the item is still in use, and when the item finishes the turn
-        /// goes on to the user's roll. A user who is dead by then, or still sprawled in a
-        /// ragdoll, can neither roll nor walk, and the turn has nowhere to go. Nothing else in
-        /// Armageddon touches the player whose turn it is, which makes this the likeliest
-        /// reading of the board freezing after it. So the user still bleeds and drops keys,
-        /// but is not knocked down and comes out alive.
-        /// </summary>
-        private static int SelfDamage(BoardPlayer user, int rolled)
-        {
-            if (TempModifiers.EveryHitKills()) return 0;
-            return Mathf.Clamp(rolled, 0, (int)user.LocalHealth - 1);
-        }
-
         public override ItemAIUse GetTarget(BoardPlayer user)
         {
             // It hurts the user too, so only sensible when reasonably healthy and behind.
             if (user.LocalHealth <= 12) return null;
             return new ItemAIUse(user, 0.55f);
+        }
+    }
+
+    /// <summary>
+    /// Blows an item aims at its own user, held back until the user's turn has passed.
+    ///
+    /// Armageddon struck its user in the middle of their own item, and the board froze after
+    /// it - most likely because the item finishes by handing the turn back for the roll, and a
+    /// player it has just killed or knocked flat can neither roll nor walk. A death while it is
+    /// somebody else's turn is the ordinary kind - it is how every attack item kills - so that
+    /// is when these land: a moment after the next player's turn starts, still killing, still
+    /// knocking down, still costing keys.
+    /// </summary>
+    internal static class Backlash
+    {
+        // After the next turn starts: long enough for the board to have moved on, short enough
+        // that it still reads as the end of the user's turn.
+        private const float Delay = 1.2f;
+
+        private class Pending
+        {
+            public BoardPlayer Victim;
+            public Action Strike;
+        }
+
+        private static readonly List<Pending> s_pending = new List<Pending>();
+        private static BoardPlayer s_turn;   // whose turn it is, as the last StartTurn said
+
+        internal static void Schedule(BoardPlayer victim, Action strike)
+        {
+            if (victim == null || strike == null) return;
+            s_pending.Add(new Pending { Victim = victim, Strike = strike });
+        }
+
+        /// <summary>A new board starts with nothing hanging over anybody.</summary>
+        internal static void Reset()
+        {
+            s_pending.Clear();
+            s_turn = null;
+        }
+
+        internal static void OnTurnStarted(BoardPlayer who)
+        {
+            s_turn = who;
+            for (int i = s_pending.Count - 1; i >= 0; i--)
+            {
+                Pending p = s_pending[i];
+                if (p.Victim == who) continue;   // still their turn: keep waiting
+                s_pending.RemoveAt(i);
+                DelayedCall.After(Delay, () => Land(p));
+            }
+        }
+
+        private static void Land(Pending p)
+        {
+            if (p.Victim == null || p.Victim.LocalHealth <= 0) return;   // something got there first
+
+            // With two players the turn can be back with the victim before the delay is up,
+            // and then this would be the very mid-turn death it exists to avoid.
+            if (p.Victim == s_turn)
+            {
+                s_pending.Add(p);
+                return;
+            }
+
+            Core.Log("Backlash: striking " + (p.Victim.GamePlayer != null ? p.Victim.GamePlayer.Name : "a player"));
+            p.Strike();
+        }
+    }
+
+    /// <summary>Runs an action a few seconds from now, whatever becomes of the object that asked.</summary>
+    internal class DelayedCall : MonoBehaviour
+    {
+        private float m_left;
+        private Action m_action;
+
+        internal static void After(float seconds, Action action)
+        {
+            DelayedCall c = new GameObject("PCI_DelayedCall").AddComponent<DelayedCall>();
+            c.m_left = seconds;
+            c.m_action = action;
+        }
+
+        private void Update()
+        {
+            m_left -= Time.deltaTime;
+            if (m_left > 0f) return;
+
+            Action a = m_action;
+            m_action = null;
+            Destroy(gameObject);
+
+            if (a == null) return;
+            try { a(); }
+            catch (Exception e) { Core.Warn("delayed call failed: " + e); }
         }
     }
 
