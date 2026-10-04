@@ -106,7 +106,7 @@ namespace PummelCustomItems
             base.Use(seed);
             if (!base.IsOwner) return;
 
-            if (player.IsAI) m_aim = AimAtNearestOpponent();
+            if (player.IsAI) m_aim = AiAimDirection();
 
             // Only the owner knows where they aimed, so it tells everyone else. Every machine
             // then plays the throw out from the same direction - the owner uses exactly the
@@ -201,6 +201,12 @@ namespace PummelCustomItems
                 if (along < bestAlong) { bestAlong = along; best = gp.BoardObject; }
             }
             return best;
+        }
+
+        /// <summary>Where a bot points this item: at the nearest opponent, unless the item knows better.</summary>
+        protected virtual Vector3 AiAimDirection()
+        {
+            return AimAtNearestOpponent();
         }
 
         protected Vector3 AimAtNearestOpponent()

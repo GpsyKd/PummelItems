@@ -458,6 +458,39 @@ namespace PummelCustomItems
             DiceOverride.Announce(who, text);
         }
 
+        /// <summary>
+        /// Bots point it at the keys. A bot picks the vacuum because keys lie close by, and the
+        /// usual aim - the nearest opponent - then swept the air in front of whoever stood
+        /// nearest, nearly always for nothing. The aim is the key whose wedge takes in the most
+        /// of the others.
+        /// </summary>
+        protected override Vector3 AiAimDirection()
+        {
+            Vector3 origin = player.BoardObject.transform.position;
+
+            List<Vector3> dirs = new List<Vector3>();
+            BoardKey[] keys = UnityEngine.Object.FindObjectsOfType<BoardKey>();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (keys[i] == null || keys[i].CurState == BoardKey.BoardKeyState.Pickup) continue;
+                Vector3 d = keys[i].transform.position - origin;
+                d.y = 0f;
+                if (d.magnitude > Reach || d.sqrMagnitude < 0.0001f) continue;
+                dirs.Add(d.normalized);
+            }
+
+            Vector3 best = player.BoardObject.transform.forward;
+            int bestCount = 0;
+            for (int i = 0; i < dirs.Count; i++)
+            {
+                int n = 0;
+                for (int j = 0; j < dirs.Count; j++)
+                    if (Vector3.Angle(dirs[i], dirs[j]) <= HalfAngle) n++;
+                if (n > bestCount) { bestCount = n; best = dirs[i]; }
+            }
+            return best;
+        }
+
         public override ItemAIUse GetTarget(BoardPlayer user)
         {
             // Only bother when there is a worthwhile pile somewhere nearby.
