@@ -232,7 +232,7 @@ namespace PummelCustomItems
                 "PCI_I_DeathWand", typeof(DeathWandItem), "DeathWand", 0.8f, 2.2f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 16, "Армагеддон",
-                "Метеоритный дождь: 9–11 урона всем на доске, включая тебя. Тебя самого не добьёт.",
+                "Метеоритный дождь: 9–11 урона всем на доске, включая тебя.",
                 "PCI_I_Armageddon", typeof(ArmageddonItem), "MeteorRock", 0.7f, 2.4f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 17, "Пылесос",

@@ -77,6 +77,41 @@ namespace PummelCustomItems
         {
             DiceOverride.Announce(who, text);
         }
+
+        /// <summary>
+        /// For an item that has just killed its own user: this use ends the turn, with no roll
+        /// after it. When the item finishes the board hands the turn back for the roll, and a
+        /// dead player can neither roll nor walk - most likely the freeze after Armageddon.
+        /// </summary>
+        protected void EndTurnAfterUse()
+        {
+            NoRollAfterUse.Raise(details);
+        }
+    }
+
+    /// <summary>
+    /// The game's own "this item ends your turn": the flag its swap portal carries, after which
+    /// the user cannot roll. Raised on one item for the one use that needs it, and lowered again
+    /// when the next turn starts, so every other use of that item plays as usual.
+    /// </summary>
+    internal static class NoRollAfterUse
+    {
+        private static readonly List<ItemDetails> s_raised = new List<ItemDetails>();
+
+        internal static void Raise(ItemDetails d)
+        {
+            if (d == null || d.skipTurnAfterUse) return;   // already the item's own setting
+            d.skipTurnAfterUse = true;
+            s_raised.Add(d);
+            Core.Log("NoRollAfterUse: '" + d.itemNameToken + "' ends this turn");
+        }
+
+        internal static void Lower()
+        {
+            for (int i = 0; i < s_raised.Count; i++)
+                if (s_raised[i] != null) s_raised[i].skipTurnAfterUse = false;
+            s_raised.Clear();
+        }
     }
 
     /// <summary>Trades your whole inventory with a random opponent.</summary>

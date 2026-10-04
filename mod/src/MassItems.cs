@@ -48,6 +48,9 @@ namespace PummelCustomItems
 
                 Effects.Blast(v.transform.position + Vector3.up, 2f);
                 v.KillPlayer(player.BoardObject, v.transform.position + Vector3.up * 2f, 14f);
+
+                // A backfire: the user is dead, so their turn is over.
+                if (v == player.BoardObject) EndTurnAfterUse();
             }
 
             ModAssets.Play("snd_explode", 0.9f);
@@ -68,7 +71,7 @@ namespace PummelCustomItems
         }
     }
 
-    /// <summary>Meteors on everybody, thrower included - who is hurt, but left standing.</summary>
+    /// <summary>Meteors on everybody, thrower included.</summary>
     public class ArmageddonItem : InstantItem
     {
         private const int DamageMin = 9;
@@ -122,31 +125,30 @@ namespace PummelCustomItems
         {
             if (target == null || target.LocalHealth <= 0) return;
 
+            // The user's own meteor hurts and can kill - that is the item's price - but does not
+            // knock them down: if they live, the turn goes on to their roll, and a player still
+            // sprawled in a ragdoll is in no state to make it. A killing blow brings its own fall.
             bool self = target == player.BoardObject;
-            if (self)
-            {
-                int rolled = damage;
-                damage = SelfDamage(target, rolled);
-                Core.Log("Armageddon: the user takes " + damage + " of " + rolled +
-                         " at " + target.LocalHealth + " hp");
-            }
 
-            if (damage > 0)
+            DamageInstance d = new DamageInstance
             {
-                DamageInstance d = new DamageInstance
-                {
-                    damage = damage,
-                    origin = target.transform.position + Vector3.up * 3f,
-                    blood = true,
-                    ragdoll = !self,   // the user stays on their feet - see SelfDamage
-                    ragdollVel = 13f,
-                    bloodVel = 16f,
-                    bloodAmount = 1f,
-                    details = "Armageddon",
-                    killer = player.BoardObject,
-                    removeKeys = true,
-                };
-                target.ApplyDamage(d);
+                damage = damage,
+                origin = target.transform.position + Vector3.up * 3f,
+                blood = true,
+                ragdoll = !self,
+                ragdollVel = 13f,
+                bloodVel = 16f,
+                bloodAmount = 1f,
+                details = "Armageddon",
+                killer = player.BoardObject,
+                removeKeys = true,
+            };
+            target.ApplyDamage(d);
+
+            if (self && target.LocalHealth <= 0)
+            {
+                Core.Log("Armageddon: the user's own meteor killed them");
+                EndTurnAfterUse();
             }
 
             Effects.Blast(target.transform.position, 2.6f);
@@ -159,23 +161,6 @@ namespace PummelCustomItems
             ModAssets.Play(booms[UnityEngine.Random.Range(0, booms.Length)], 0.8f);
 
             try { GameManager.Board.boardCamera.AddShake(0.45f); } catch { }
-        }
-
-        /// <summary>
-        /// How much of their own meteor the user takes: what it rolled, but never their last
-        /// point of health - which, while every hit kills, means nothing at all.
-        ///
-        /// The rain lands while the item is still in use, and when the item finishes the turn
-        /// goes on to the user's roll. A user who is dead by then, or still sprawled in a
-        /// ragdoll, can neither roll nor walk, and the turn has nowhere to go. Nothing else in
-        /// Armageddon touches the player whose turn it is, which makes this the likeliest
-        /// reading of the board freezing after it. So the user still bleeds and drops keys,
-        /// but is not knocked down and comes out alive.
-        /// </summary>
-        private static int SelfDamage(BoardPlayer user, int rolled)
-        {
-            if (TempModifiers.EveryHitKills()) return 0;
-            return Mathf.Clamp(rolled, 0, (int)user.LocalHealth - 1);
         }
 
         public override ItemAIUse GetTarget(BoardPlayer user)
