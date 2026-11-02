@@ -5,33 +5,55 @@ using UnityEngine;
 namespace PummelCustomItems
 {
     /// <summary>
-    /// Aimed at another player rather than at a spot: the wedge picks whoever is best lined
-    /// up, and the effect lands on them directly. Reach and shape follow the magnet.
+    /// Aimed at players rather than at a spot: everyone the wedge takes in gets the effect,
+    /// directly. The wedge is the stock magnet's - its reach, its angle and its marker - so
+    /// every item of this kind catches exactly who the magnet would.
     /// </summary>
     public abstract class TargetedItem : AimedItem
     {
-        protected virtual float Reach { get { return 9f; } }
-        protected virtual float HalfAngle { get { return 28f; } }
 
-        protected abstract void Affect(BoardPlayer target);
+        /// <summary>The effect on one player in the wedge; false when it could not land on them.</summary>
+        protected abstract bool Affect(BoardPlayer target);
+
+        /// <summary>Runs once everyone in the wedge is done, for whatever adds up across them.</summary>
+        protected virtual void AfterAll() { }
+
+        /// <summary>
+        /// Played once for the whole wedge. The same clip started for every player at once is
+        /// still the one sound, only several times as loud.
+        /// </summary>
+        protected virtual string HitSound { get { return null; } }
+        protected virtual float HitVolume { get { return 0.9f; } }
+
         protected virtual string MissLabel { get { return "Мимо"; } }
 
-        // Show the wedge that actually decides who gets picked, not just a direction.
-        protected override float IndicatorReach { get { return Reach; } }
-        protected override float IndicatorHalfAngle { get { return HalfAngle; } }
+        protected override bool SweepsMagnetCone { get { return true; } }
 
         protected override void PerformAimed(Vector3 dir)
         {
-            BoardPlayer target = PickTarget(dir, Reach, HalfAngle);
+            // Everyone in the wedge, not just whoever stands nearest: the wedge on screen is
+            // what the player aims, so it is what gets hit.
+            List<BoardPlayer> targets = PickInMagnetCone(dir);
 
-            if (target == null)
+            if (targets.Count == 0)
             {
                 DiceOverride.Announce(player.BoardObject, MissLabel);
                 Core.Log(GetType().Name + ": nobody in the aimed wedge");
                 return;
             }
 
-            Affect(target);
+            int landed = 0;
+            for (int i = 0; i < targets.Count; i++)
+            {
+                // One player going wrong must not cost the rest of the wedge their hit.
+                try { if (Affect(targets[i])) landed++; }
+                catch (System.Exception e) { Core.Warn(GetType().Name + " failed on actor " + targets[i].ActorID + ": " + e); }
+            }
+
+            if (landed > 0 && HitSound != null) ModAssets.Play(HitSound, HitVolume);
+            AfterAll();
+
+            Core.Log(GetType().Name + ": hit " + landed + " of " + targets.Count + " in the wedge");
         }
 
         public override ItemAIUse GetTarget(BoardPlayer user)
@@ -43,8 +65,9 @@ namespace PummelCustomItems
                 if (gp.BoardObject.LocalHealth <= 0) continue;
                 if (IsActorATeammateThatShouldBeIgnored(gp.BoardObject, user.GamePlayer)) continue;
 
+                float reach = StockMagnet.HitDist;
                 float dist = Vector3.Distance(gp.BoardObject.transform.position, user.transform.position);
-                if (dist <= Reach) return new ItemAIUse(gp.BoardObject, Mathf.Clamp01(1f - dist / Reach));
+                if (dist <= reach) return new ItemAIUse(gp.BoardObject, Mathf.Clamp01(1f - dist / reach));
             }
             return null;
         }
@@ -88,32 +111,35 @@ namespace PummelCustomItems
 
     // ------------------------------------------------------------------ dice meddling
 
-    /// <summary>The victim's next roll comes up as one.</summary>
+    /// <summary>The victims' next roll comes up as one.</summary>
     public class CurseItem : TargetedItem
     {
-        protected override void Affect(BoardPlayer target)
+        protected override string HitSound { get { return "snd_chaos"; } }
+        protected override float HitVolume { get { return 0.7f; } }
+
+        protected override bool Affect(BoardPlayer target)
         {
             short id = target.GamePlayer.GlobalID;
             DiceOverride.ArmForNextTurn(id, 1, "Проклятие!");
             DiceOverride.Announce(target, "Проклят");
-            ModAssets.Play("snd_chaos", 0.7f);
             Core.Log("Curse: player " + id + " will roll 1");
+            return true;
         }
     }
 
-    /// <summary>The victim's next roll comes up as zero - a turn that goes nowhere.</summary>
+    /// <summary>The victims' next roll comes up as zero - a turn that goes nowhere.</summary>
     public class FreezeItem : TargetedItem
     {
-        protected override float Reach { get { return 12f; } }
+        protected override string HitSound { get { return "snd_shatter"; } }
 
-        protected override void Affect(BoardPlayer target)
+        protected override bool Affect(BoardPlayer target)
         {
             short id = target.GamePlayer.GlobalID;
             DiceOverride.ArmForNextTurn(id, 0, "Заморожен!");
             DiceOverride.Announce(target, "Заморожен");
-            ModAssets.Play("snd_shatter", 0.9f);
             Effects.Blast(target.transform.position + Vector3.up, 1.6f);
             Core.Log("Freeze: player " + id + " will roll 0");
+            return true;
         }
     }
 
@@ -139,21 +165,28 @@ namespace PummelCustomItems
     // ----------------------------------------------------------------------- vampiric
 
     /// <summary>
-    /// Drains a share of the target's health and hands it to the user.
+    /// Drains a share of every target's health and hands it to the user.
     ///
-    /// Taken as a percentage of what the target currently has, so it never finishes anybody
-    /// off - a full-health victim loses a lot, a nearly-dead one loses almost nothing. That
-    /// keeps it a theft rather than an execution.
+    /// A share of what the target has left, but never less than MinDrain. A share alone could
+    /// not kill: it shrank with the victim, until a nearly-dead one lost next to nothing. With
+    /// the floor, it takes 30% from anyone above 20 health, 6 from anyone below - and finishes
+    /// off whoever has 6 or less. 6 is a shotgun hit, one fifth of full health.
+    ///
+    /// Held the way the game's own magnet is, in one hand at the side; it is that magnet's
+    /// model, recoloured.
     /// </summary>
     public class LifeMagnetItem : TargetedItem
     {
         private const float DrainShare = 0.30f;
-        protected override float Reach { get { return 8.5f; } }
-        protected override float HalfAngle { get { return 31.5f; } }
+        private const int MinDrain = 6;
+        protected override string HitSound { get { return "snd_drain"; } }
 
-        protected override void Affect(BoardPlayer target)
+        private int m_drained;
+
+        protected override bool Affect(BoardPlayer target)
         {
-            int amount = Mathf.Max(1, Mathf.RoundToInt(target.LocalHealth * DrainShare));
+            int before = target.LocalHealth;
+            int amount = Mathf.Max(MinDrain, Mathf.RoundToInt(before * DrainShare));
 
             target.ApplyDamage(new DamageInstance
             {
@@ -167,14 +200,25 @@ namespace PummelCustomItems
                 killer = player.BoardObject,
                 removeKeys = false,    // health only; keys are the plain magnet's business
             });
+            // The user gets what the victim actually lost: all of it, if this killed them; none, if
+            // a cactus or a present took the hit.
+            bool died = target.PlayerState == BoardPlayerState.Dying || target.PlayerState == BoardPlayerState.Dead;
+            int taken = died ? before : Mathf.Max(0, before - target.LocalHealth);
+            m_drained += taken;
 
-            // Healing clamps to the maximum on its own and prints its own "+N".
-            player.BoardObject.ApplyHeal(amount);
-
-            ModAssets.Play("snd_drain", 0.9f);
             Effects.Blast(target.transform.position + Vector3.up, 1.2f);
 
-            Core.Log("LifeMagnet: drained " + amount + " hp from actor " + target.ActorID);
+            Core.Log("LifeMagnet: drained " + taken + " of " + amount + " hp from actor " + target.ActorID +
+                     (died ? ", which killed them" : ""));
+            return true;
+        }
+
+        protected override void AfterAll()
+        {
+            // One heal for the whole wedge. Healing clamps to the maximum on its own and prints
+            // its own "+N"; a heal per victim would stack those on the same spot, reading as one.
+            if (m_drained > 0) player.BoardObject.ApplyHeal(m_drained);
+            m_drained = 0;
         }
     }
 
@@ -218,49 +262,50 @@ namespace PummelCustomItems
         }
     }
 
-    /// <summary>Boots the target several nodes back down the track.</summary>
+    /// <summary>Boots the targets several nodes back down the track.</summary>
     public class KickItem : TargetedItem
     {
         private const int Nodes = 4;
-        protected override float Reach { get { return 7f; } }
+        protected override string HitSound { get { return "snd_whack"; } }
 
-        protected override void Affect(BoardPlayer target)
+        protected override bool Affect(BoardPlayer target)
         {
             BoardNode dest = BoardMove.StepBack(target.CurrentNode, Nodes);
             if (dest == null || dest == target.CurrentNode)
             {
-                DiceOverride.Announce(player.BoardObject, "Некуда толкать");
-                Core.Log("Kick: no node behind the target");
-                return;
+                // Over the one who stays put: the others in the wedge may well have gone.
+                DiceOverride.Announce(target, "Некуда толкать");
+                Core.Log("Kick: no node behind actor " + target.ActorID);
+                return false;
             }
 
-            ModAssets.Play("snd_whack", 0.9f);
             DiceOverride.Announce(target, "Назад!");
-            Core.Log("Kick: knocking target back toward node " + dest.NodeID);
+            Core.Log("Kick: knocking actor " + target.ActorID + " back toward node " + dest.NodeID);
 
             StartCoroutine(BoardMove.MoveTo(this, target, dest));
+            return true;
         }
     }
 
-    /// <summary>Sends the target all the way back to the start.</summary>
+    /// <summary>Sends the targets all the way back to the start.</summary>
     public class StartTicketItem : TargetedItem
     {
-        protected override float Reach { get { return 12f; } }
+        protected override string HitSound { get { return "snd_shuffle"; } }
 
-        protected override void Affect(BoardPlayer target)
+        protected override bool Affect(BoardPlayer target)
         {
             BoardNode start = BoardMove.FindStartNode();
             if (start == null)
             {
                 Core.Warn("StartTicket: no start node on this board");
-                return;
+                return false;
             }
 
-            ModAssets.Play("snd_shuffle", 0.9f);
             DiceOverride.Announce(target, "На старт!");
-            Core.Log("StartTicket: sending target to node " + start.NodeID);
+            Core.Log("StartTicket: sending actor " + target.ActorID + " to node " + start.NodeID);
 
             StartCoroutine(BoardMove.MoveTo(this, target, start));
+            return true;
         }
     }
 }

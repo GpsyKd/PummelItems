@@ -48,6 +48,9 @@ namespace PummelCustomItems
 
                 Effects.Blast(v.transform.position + Vector3.up, 2f);
                 v.KillPlayer(player.BoardObject, v.transform.position + Vector3.up * 2f, 14f);
+
+                // A backfire: the user is dead, so their turn is over.
+                if (v == player.BoardObject) EndTurnAfterUse();
             }
 
             ModAssets.Play("snd_explode", 0.9f);
@@ -122,12 +125,17 @@ namespace PummelCustomItems
         {
             if (target == null || target.LocalHealth <= 0) return;
 
+            // The user's own meteor hurts and can kill - that is the item's price - but does not
+            // knock them down: if they live, the turn goes on to their roll, and a player still
+            // sprawled in a ragdoll is in no state to make it. A killing blow brings its own fall.
+            bool self = target == player.BoardObject;
+
             DamageInstance d = new DamageInstance
             {
                 damage = damage,
                 origin = target.transform.position + Vector3.up * 3f,
                 blood = true,
-                ragdoll = true,
+                ragdoll = !self,
                 ragdollVel = 13f,
                 bloodVel = 16f,
                 bloodAmount = 1f,
@@ -136,6 +144,12 @@ namespace PummelCustomItems
                 removeKeys = true,
             };
             target.ApplyDamage(d);
+
+            if (self && target.LocalHealth <= 0)
+            {
+                Core.Log("Armageddon: the user's own meteor killed them");
+                EndTurnAfterUse();
+            }
 
             Effects.Blast(target.transform.position, 2.6f);
 
@@ -284,11 +298,25 @@ namespace PummelCustomItems
             }
 
             if ((transform.position - m_target).sqrMagnitude < 0.05f)
-            {
-                if (m_mark != null) Destroy(m_mark.gameObject);
-                if (m_onImpact != null) m_onImpact();
-                Destroy(gameObject);
-            }
+                Land();
+        }
+
+        /// <summary>
+        /// Lands the rock - once. The callback used to run before the rock was cleared away, so
+        /// a callback that threw left it where it was, to land again on the next frame and the
+        /// one after, running the whole impact every time.
+        /// </summary>
+        private void Land()
+        {
+            Action onImpact = m_onImpact;
+            m_onImpact = null;
+
+            if (m_mark != null) Destroy(m_mark.gameObject);
+            Destroy(gameObject);
+
+            if (onImpact == null) return;
+            try { onImpact(); }
+            catch (Exception e) { Core.Warn("Meteor: impact failed: " + e); }
         }
     }
 
@@ -359,16 +387,21 @@ namespace PummelCustomItems
 
     /// <summary>
     /// Sucks in loose keys - including your own, which normally cannot be picked up - but
-    /// only those inside an aimed wedge. Range and shape follow the magnet, which reaches
-    /// 10 units in the direction the player points.
+    /// only those inside an aimed wedge: the stock magnet's, reach, angle and marker.
     /// </summary>
     public class VacuumItem : AimedItem
     {
-        private const float Reach = 7.5f;
-        private const float HalfAngle = 31.5f;   // 63-degree wedge in front of the player
+        protected override bool SweepsMagnetCone { get { return true; } }
 
-        protected override float IndicatorReach { get { return Reach; } }
-        protected override float IndicatorHalfAngle { get { return HalfAngle; } }
+        /// <summary>
+        /// The magnet's rule, on the ground: a key's height is how it happens to lie, not how
+        /// far away it is, and a key just by the player's feet would fail the angle on it alone.
+        /// </summary>
+        private static bool Catches(Vector3 origin, Vector3 dir, Vector3 key)
+        {
+            key.y = origin.y;
+            return StockMagnet.InCone(origin, dir, key);
+        }
 
         protected override void PerformAimed(Vector3 dir)
         {
@@ -385,10 +418,7 @@ namespace PummelCustomItems
                 // Already flying to somebody - leave it alone.
                 if (k.CurState == BoardKey.BoardKeyState.Pickup) continue;
 
-                Vector3 delta = k.transform.position - origin;
-                delta.y = 0f;
-                if (delta.magnitude > Reach) continue;
-                if (Vector3.Angle(dir, delta) > HalfAngle) continue;
+                if (!Catches(origin, dir, k.transform.position)) continue;
 
                 // Counted everywhere, so every machine shows the same "+N"; picked up on the
                 // host only, because PickupKey on the host already tells every other machine.
@@ -415,6 +445,43 @@ namespace PummelCustomItems
             DiceOverride.Announce(who, text);
         }
 
+        /// <summary>
+        /// Bots point it at the keys. A bot picks the vacuum because keys lie close by, and the
+        /// usual aim - the nearest opponent - then swept the air in front of whoever stood
+        /// nearest, nearly always for nothing. The aim is the key whose wedge takes in the most
+        /// of the others.
+        /// </summary>
+        protected override Vector3 AiAimDirection()
+        {
+            Vector3 origin = player.BoardObject.transform.position;
+
+            float reach = StockMagnet.HitDist;
+            List<Vector3> spots = new List<Vector3>();
+            BoardKey[] keys = UnityEngine.Object.FindObjectsOfType<BoardKey>();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (keys[i] == null || keys[i].CurState == BoardKey.BoardKeyState.Pickup) continue;
+                Vector3 d = keys[i].transform.position - origin;
+                d.y = 0f;
+                if (d.magnitude >= reach || d.sqrMagnitude < 0.0001f) continue;
+                spots.Add(keys[i].transform.position);
+            }
+
+            Vector3 best = player.BoardObject.transform.forward;
+            int bestCount = 0;
+            for (int i = 0; i < spots.Count; i++)
+            {
+                Vector3 dir = spots[i] - origin;
+                dir.y = 0f;
+                dir.Normalize();
+                int n = 0;
+                for (int j = 0; j < spots.Count; j++)
+                    if (Catches(origin, dir, spots[j])) n++;
+                if (n > bestCount) { bestCount = n; best = dir; }
+            }
+            return best;
+        }
+
         public override ItemAIUse GetTarget(BoardPlayer user)
         {
             // Only bother when there is a worthwhile pile somewhere nearby.
@@ -423,7 +490,7 @@ namespace PummelCustomItems
             for (int i = 0; i < keys.Length; i++)
             {
                 if (keys[i] == null) continue;
-                if (Vector3.Distance(keys[i].transform.position, user.transform.position) <= Reach) near++;
+                if (Vector3.Distance(keys[i].transform.position, user.transform.position) <= StockMagnet.HitDist) near++;
             }
             if (near < 3) return null;
             return new ItemAIUse(user, Mathf.Clamp01(near / 10f));

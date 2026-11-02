@@ -42,14 +42,17 @@ namespace PummelCustomItems
             public GameObject Prefab;
             public PlayerBone Bone;
             public Vector3 Position, Rotation, Scale;
+            public bool Carried;   // held up in front with both hands, or the way the game holds its own
         }
 
-        // key | addressable path | bone | position | rotation | scale, as the game's item list has them.
+        // key | addressable path | bone | position | rotation | scale, as the game's item list has them,
+        // | "carried" for the carrying pose ours use, "own" for the pose the game holds it in.
         private static readonly string[] s_reference =
         {
-            "TacticalCactus|Prefabs/Items/HeldPrefabs/TacticalCactusHeldPrefab|LeftHand|0.05 -0.04 0.08|0 0 0|1",
-            "HealthKit|Prefabs/Items/HeldPrefabs/HealthKitHeldPrefab|LeftHand|0.08 0.01 0.09|28.28 -325.06 19.04|1",
-            "Present|Prefabs/Items/HeldPrefabs/PresentHeldPrefab|RightHand|0.09 0.14 0.34|98.44 43 104.05|1",
+            "TacticalCactus|Prefabs/Items/HeldPrefabs/TacticalCactusHeldPrefab|LeftHand|0.05 -0.04 0.08|0 0 0|1|carried",
+            "HealthKit|Prefabs/Items/HeldPrefabs/HealthKitHeldPrefab|LeftHand|0.08 0.01 0.09|28.28 -325.06 19.04|1|carried",
+            "Present|Prefabs/Items/HeldPrefabs/PresentHeldPrefab|RightHand|0.09 0.14 0.34|98.44 43 104.05|1|carried",
+            "Magnet|Prefabs/Items/HeldPrefabs/MagnetItemHeldPrefab|RightHand|-0.07 0.38 0.06|-2.91 167.53 79.56|1|own",
         };
 
         private static readonly Dictionary<string, GameObject> s_referenceModels = new Dictionary<string, GameObject>();
@@ -290,10 +293,18 @@ namespace PummelCustomItems
             StringBuilder index = new StringBuilder();
             index.AppendLine("views per item: front | side of the holding hand | behind and above (board camera)");
 
+            bool carrying = true;
             for (int i = 0; i < items.Count; i++)
             {
                 if (anim == null) break;
                 Entry e = items[i];
+                if (e.Carried != carrying)
+                {
+                    carrying = e.Carried;
+                    anim.Carrying = carrying;
+                    yield return new WaitForSecondsRealtime(1.2f);
+                    if (anim == null) break;
+                }
                 Transform bone = anim.GetBone(e.Bone);
                 if (bone == null || e.Prefab == null) continue;
 
@@ -319,6 +330,7 @@ namespace PummelCustomItems
                 UnityEngine.Object.Destroy(axes);
                 Bounds mb = ModelBounds(e.Prefab);
                 index.AppendLine("row " + (row + 1) + ", item " + (i % ItemsPerRow + 1) + ": " + e.Key +
+                                 (e.Carried ? "" : " (held the game's way)") +
                                  "  [" + e.Bone + " " + V3(e.Position) + " / " + V3(e.Rotation) + " / " + V3(e.Scale) + "]" +
                                  "  model centre " + F4(mb.center) + " size " + F4(mb.size));
             }
@@ -363,6 +375,7 @@ namespace PummelCustomItems
                     Position = ParseV3(f[3]),
                     Rotation = ParseV3(f[4]),
                     Scale = ParseV3(f[5]),
+                    Carried = f[6] == "carried",
                 });
             }
 
@@ -377,9 +390,14 @@ namespace PummelCustomItems
                     Position = d.heldPosition,
                     Rotation = d.heldRotation,
                     Scale = d.heldScale,
+                    Carried = ItemRegistry.IsCarried(d),
                 });
             }
-            return list;
+
+            // Carried ones first, so the pose changes once, not back and forth.
+            List<Entry> ordered = list.FindAll(x => x.Carried);
+            ordered.AddRange(list.FindAll(x => !x.Carried));
+            return ordered;
         }
 
         private static GameObject ReferenceModel(string path)
@@ -432,11 +450,16 @@ namespace PummelCustomItems
         /// <summary>Halfway between the hand and the middle of the item.</summary>
         private static Vector3 Focus(GameObject held, Vector3 hand)
         {
-            Renderer[] rs = held.GetComponentsInChildren<Renderer>();
-            if (rs.Length == 0) return hand;
-            Bounds b = rs[0].bounds;
-            for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
-            return Vector3.Lerp(hand, b.center, 0.5f);
+            // Meshes only: the game's own held items carry particle systems, whose bounds before
+            // they have ever played say nothing about where the item is.
+            bool any = false;
+            Bounds b = new Bounds();
+            foreach (Renderer r in held.GetComponentsInChildren<Renderer>())
+            {
+                if (!(r is MeshRenderer) && !(r is SkinnedMeshRenderer)) continue;
+                if (any) b.Encapsulate(r.bounds); else { b = r.bounds; any = true; }
+            }
+            return any ? Vector3.Lerp(hand, b.center, 0.5f) : hand;
         }
 
         /// <summary>Renders one tile looking at <paramref name="focus"/> from the direction <paramref name="eye"/>.</summary>

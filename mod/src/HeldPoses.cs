@@ -77,7 +77,6 @@ namespace PummelCustomItems
             { "PCI_I_Vacuum", new HeldPose(PlayerBone.LeftHand, new Vector3(-0.0246f, 0.1866f, -0.0673f), new Vector3(36.75f, 165.24f, 104.03f), 0.82f) },
             { "PCI_I_Grapple", new HeldPose(PlayerBone.LeftHand, new Vector3(0.0435f, 0.0673f, 0.0472f), new Vector3(-50.45f, -141.08f, 58.1f), 0.731f) },
             { "PCI_I_Signpost", new HeldPose(PlayerBone.LeftHand, new Vector3(0.1029f, 0.035f, 0.088f), new Vector3(-51.02f, 142.57f, 107.99f), 1.031f) },
-            { "PCI_I_LifeMagnet", new HeldPose(PlayerBone.LeftHand, new Vector3(0.0869f, 0.2114f, -0.0337f), new Vector3(11.2f, 66.74f, 142.42f), 0.592f) },
         };
 
         private static readonly Dictionary<string, HeldPose> s_file = new Dictionary<string, HeldPose>();

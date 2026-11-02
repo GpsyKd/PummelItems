@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using ZP.Net;
 
@@ -17,13 +18,14 @@ namespace PummelCustomItems
         protected virtual float AiRange { get { return 14f; } }
 
         /// <summary>
-        /// Items that sweep a wedge show the wedge itself. Zero means "not a sector item" -
-        /// those keep the arrow, which is the right picture for something thrown.
+        /// Items that sweep a wedge sweep the stock magnet's - its reach, its angle - and show
+        /// the magnet's own aiming marker. Everything else keeps the arrow, which is the right
+        /// picture for something thrown.
         /// </summary>
-        protected virtual float IndicatorReach { get { return 0f; } }
-        protected virtual float IndicatorHalfAngle { get { return 0f; } }
+        protected virtual bool SweepsMagnetCone { get { return false; } }
 
         /// <summary>Non-zero for items that reach along a lane rather than sweeping an arc.</summary>
+        protected virtual float IndicatorReach { get { return 0f; } }
         protected virtual float IndicatorHalfWidth { get { return 0f; } }
 
         /// <summary>
@@ -34,14 +36,14 @@ namespace PummelCustomItems
 
         private Vector3 m_aim = Vector3.forward;
         private AimArrow m_arrow;
-        private SectorIndicator m_sector;
+        private MagnetConeIndicator m_cone;
         private BeamIndicator m_beam;
         private TrajectoryArc m_arc;
 
         public override void Setup()
         {
             base.Setup();
-            player.BoardObject.PlayerAnimation.Carrying = true;
+            if (ItemRegistry.IsCarried(details)) player.BoardObject.PlayerAnimation.Carrying = true;
             m_aim = player.BoardObject.transform.forward;
 
             if (player.IsLocalPlayer && !player.IsAI)
@@ -51,10 +53,10 @@ namespace PummelCustomItems
 
                 if (arc != null)
                     m_arc = TrajectoryArc.Create(tint, arc);
+                else if (SweepsMagnetCone)
+                    m_cone = MagnetConeIndicator.Create(tint);
                 else if (IndicatorReach > 0f && IndicatorHalfWidth > 0f)
                     m_beam = BeamIndicator.Create(tint, IndicatorReach, IndicatorHalfWidth);
-                else if (IndicatorReach > 0f)
-                    m_sector = SectorIndicator.Create(tint, IndicatorReach, IndicatorHalfAngle);
                 else
                     m_arrow = AimArrow.Create(tint);
             }
@@ -83,7 +85,7 @@ namespace PummelCustomItems
 
                 Vector3 from = player.BoardObject.transform.position;
                 if (m_arrow != null) m_arrow.Aim(from, m_aim);
-                if (m_sector != null) m_sector.Aim(from, m_aim);
+                if (m_cone != null) m_cone.Aim(from, m_aim);
                 if (m_beam != null) m_beam.Aim(from, m_aim);
                 if (m_arc != null) m_arc.Aim(from, m_aim);
             }
@@ -96,7 +98,7 @@ namespace PummelCustomItems
         private void DismissIndicator()
         {
             if (m_arrow != null) { m_arrow.Dismiss(); m_arrow = null; }
-            if (m_sector != null) { m_sector.Dismiss(); m_sector = null; }
+            if (m_cone != null) { m_cone.Dismiss(); m_cone = null; }
             if (m_beam != null) { m_beam.Dismiss(); m_beam = null; }
             if (m_arc != null) { m_arc.Dismiss(); m_arc = null; }
         }
@@ -106,7 +108,7 @@ namespace PummelCustomItems
             base.Use(seed);
             if (!base.IsOwner) return;
 
-            if (player.IsAI) m_aim = AimAtNearestOpponent();
+            if (player.IsAI) m_aim = AiAimDirection();
 
             // Only the owner knows where they aimed, so it tells everyone else. Every machine
             // then plays the throw out from the same direction - the owner uses exactly the
@@ -142,15 +144,14 @@ namespace PummelCustomItems
             Finish(relay: false);
         }
         /// <summary>
-        /// The opponent best lined up with the aim: inside the wedge, nearest first.
-        /// Null when nobody qualifies, which the caller should report rather than silently
-        /// waste the item.
+        /// Every opponent the stock magnet, aimed along <paramref name="dir"/>, would catch - by
+        /// the magnet's own rule. Empty when nobody qualifies, which the caller should report
+        /// rather than silently waste the item.
         /// </summary>
-        protected BoardPlayer PickTarget(Vector3 dir, float reach, float halfAngle)
+        protected List<BoardPlayer> PickInMagnetCone(Vector3 dir)
         {
             BoardPlayer me = player.BoardObject;
-            BoardPlayer best = null;
-            float bestDist = float.MaxValue;
+            List<BoardPlayer> found = new List<BoardPlayer>();
 
             for (int i = 0; i < GameManager.PlayerCount; i++)
             {
@@ -159,16 +160,11 @@ namespace PummelCustomItems
                 if (gp.BoardObject.LocalHealth <= 0) continue;
                 if (IsActorATeammateThatShouldBeIgnored(gp.BoardObject, player)) continue;
 
-                Vector3 delta = gp.BoardObject.transform.position - me.transform.position;
-                delta.y = 0f;
+                if (!StockMagnet.InCone(me.transform.position, dir, gp.BoardObject.transform.position)) continue;
 
-                float dist = delta.magnitude;
-                if (dist > reach) continue;
-                if (Vector3.Angle(dir, delta) > halfAngle) continue;
-
-                if (dist < bestDist) { bestDist = dist; best = gp.BoardObject; }
+                found.Add(gp.BoardObject);
             }
-            return best;
+            return found;
         }
 
         /// <summary>
@@ -201,6 +197,12 @@ namespace PummelCustomItems
                 if (along < bestAlong) { bestAlong = along; best = gp.BoardObject; }
             }
             return best;
+        }
+
+        /// <summary>Where a bot points this item: at the nearest opponent, unless the item knows better.</summary>
+        protected virtual Vector3 AiAimDirection()
+        {
+            return AimAtNearestOpponent();
         }
 
         protected Vector3 AimAtNearestOpponent()

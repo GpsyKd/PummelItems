@@ -6,9 +6,10 @@ namespace PummelCustomItems
 {
     /// <summary>
     /// Stand-in visual effects built from primitives. The game's own explosion prefabs are
-    /// off-limits by design (nothing borrowed from the game), and a particle system cannot
-    /// be described in code as cheaply as a mesh - so for now a blast is an expanding,
-    /// fading shell. Good enough to read at a glance; replaceable later.
+    /// left alone by design - the mod borrows from the game only where looking like the game
+    /// is the point (StockMagnet) - and a particle system cannot be described in code as
+    /// cheaply as a mesh, so for now a blast is an expanding, fading shell. Good enough to
+    /// read at a glance; replaceable later.
     /// </summary>
     internal static class Effects
     {
@@ -162,6 +163,39 @@ namespace PummelCustomItems
             Color c = m_mat.color;
             c.a = 0.22f + 0.12f * Mathf.Sin(Time.time * 5f);
             m_mat.color = c;
+        }
+    }
+
+    /// <summary>
+    /// The game's own magnet cone - the very marker the stock magnet lays down while it is
+    /// aimed, placed the way the magnet places it - for every item of ours that sweeps a wedge,
+    /// since they all catch exactly what the magnet would. Should the game's marker not be
+    /// available, a drawn wedge of the same size stands in.
+    /// </summary>
+    internal class MagnetConeIndicator : MonoBehaviour
+    {
+        private SectorIndicator m_drawn;
+
+        internal static MagnetConeIndicator Create(Color fallbackTint)
+        {
+            GameObject cone = StockMagnet.CreateCone();
+            if (cone != null) return cone.AddComponent<MagnetConeIndicator>();
+
+            MagnetConeIndicator c = new GameObject("PCI_MagnetCone").AddComponent<MagnetConeIndicator>();
+            c.m_drawn = SectorIndicator.Create(fallbackTint, StockMagnet.HitDist, StockMagnet.HalfAngle);
+            return c;
+        }
+
+        internal void Aim(Vector3 origin, Vector3 direction)
+        {
+            if (m_drawn != null) m_drawn.Aim(origin, direction);
+            else StockMagnet.PlaceCone(transform, origin, direction);
+        }
+
+        internal void Dismiss()
+        {
+            if (m_drawn != null) m_drawn.Dismiss();
+            if (this != null) Destroy(gameObject);
         }
     }
 

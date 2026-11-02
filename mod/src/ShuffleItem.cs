@@ -36,54 +36,63 @@ namespace PummelCustomItems
 
         private IEnumerator DoShuffle()
         {
-            List<BoardPlayer> players = LivingPlayers();
-            if (players.Count < 2)
+            // The item finishes however this ends - done, nobody to shuffle, or an error halfway.
+            // Every other item of ours already guarantees that; this one finished only on the way
+            // out of a clean run, so anything thrown in between left the board waiting on an item
+            // that would never finish, with nobody able to move.
+            try
             {
-                Core.Log("Shuffle: fewer than 2 living players, nothing to do");
+                List<BoardPlayer> players = LivingPlayers();
+                if (players.Count < 2)
+                {
+                    Core.Log("Shuffle: fewer than 2 living players, nothing to do");
+                    yield break;
+                }
+
+                // Where everyone stands right now.
+                BoardNode[] nodes = new BoardNode[players.Count];
+                for (int i = 0; i < players.Count; i++) nodes[i] = players[i].CurrentNode;
+
+                int[] perm = Derangement(players.Count);
+
+                Core.Log("Shuffle: moving " + players.Count + " players");
+                ModAssets.Play("snd_shuffle", 0.9f);
+
+                // A player disguised as a cactus is dropped out of the disguise first, the same
+                // way SwapItem handles it, otherwise the disguise follows them across the board.
+                for (int i = 0; i < players.Count; i++)
+                {
+                    if (players[i].CactusScript != null)
+                        players[i].RemoveCactus(players[i].transform.position, 5f);
+                }
+
+                // Free every slot before claiming new ones, or two players can end up fighting
+                // over the same spot on a node.
+                for (int i = 0; i < players.Count; i++)
+                    players[i].CurrentNode.LeaveNode(players[i]);
+
+                for (int i = 0; i < players.Count; i++)
+                    players[i].CurrentNode = nodes[perm[i]];
+
+                yield return new WaitForSeconds(0.2f);
+
+                Coroutine[] drops = new Coroutine[players.Count];
+                for (int i = 0; i < players.Count; i++)
+                    drops[i] = StartCoroutine(players[i].StartRagdoll(0f, DropForce, setAnim: false, 0.2f));
+
+                for (int i = 0; i < players.Count; i++)
+                    yield return drops[i];
+
+                // The dice hovers over the player; without this it stays at the old position.
+                for (int i = 0; i < players.Count; i++)
+                    players[i].diceEffect.startPos = players[i].DicePosition();
+
+                Core.Log("Shuffle: done");
+            }
+            finally
+            {
                 Finish(relay: false);
-                yield break;
             }
-
-            // Where everyone stands right now.
-            BoardNode[] nodes = new BoardNode[players.Count];
-            for (int i = 0; i < players.Count; i++) nodes[i] = players[i].CurrentNode;
-
-            int[] perm = Derangement(players.Count);
-
-            Core.Log("Shuffle: moving " + players.Count + " players");
-            ModAssets.Play("snd_shuffle", 0.9f);
-
-            // A player disguised as a cactus is dropped out of the disguise first, the same
-            // way SwapItem handles it, otherwise the disguise follows them across the board.
-            for (int i = 0; i < players.Count; i++)
-            {
-                if (players[i].CactusScript != null)
-                    players[i].RemoveCactus(players[i].transform.position, 5f);
-            }
-
-            // Free every slot before claiming new ones, or two players can end up fighting
-            // over the same spot on a node.
-            for (int i = 0; i < players.Count; i++)
-                players[i].CurrentNode.LeaveNode(players[i]);
-
-            for (int i = 0; i < players.Count; i++)
-                players[i].CurrentNode = nodes[perm[i]];
-
-            yield return new WaitForSeconds(0.2f);
-
-            Coroutine[] drops = new Coroutine[players.Count];
-            for (int i = 0; i < players.Count; i++)
-                drops[i] = StartCoroutine(players[i].StartRagdoll(0f, DropForce, setAnim: false, 0.2f));
-
-            for (int i = 0; i < players.Count; i++)
-                yield return drops[i];
-
-            // The dice hovers over the player; without this it stays at the old position.
-            for (int i = 0; i < players.Count; i++)
-                players[i].diceEffect.startPos = players[i].DicePosition();
-
-            Core.Log("Shuffle: done");
-            Finish(relay: false);
         }
 
         private static List<BoardPlayer> LivingPlayers()

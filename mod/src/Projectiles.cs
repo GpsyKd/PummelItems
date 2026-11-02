@@ -194,6 +194,7 @@ namespace PummelCustomItems
 
             m_fuse = m_spec.Fuse;
             m_armed = true;
+            IgnoreVolley();
 
             if (m_rb == null) m_rb = GetComponent<Rigidbody>();
             if (m_rb == null) return;
@@ -235,6 +236,32 @@ namespace PummelCustomItems
                 base.transform.position = netPosition.Value;
                 base.transform.eulerAngles = netRotation.Value;
             }
+        }
+
+        // Everything launched in one frame is one volley: the ricochet's six pellets, or the
+        // pieces of one blast.
+        private static readonly List<Collider> s_volley = new List<Collider>();
+        private static int s_volleyFrame = -1;
+
+        /// <summary>
+        /// Keeps a volley from colliding with itself. The ricochet's pellets leave from points
+        /// 0.07 apart, with colliders 0.18 across, so they started out inside one another: the
+        /// physics shoved them apart sideways, scattering the spread, and every pellet counted
+        /// that as its first bounce - one of its three gone, with a ping, as it left the hand.
+        /// </summary>
+        private void IgnoreVolley()
+        {
+            Collider mine = GetComponent<Collider>();
+            if (mine == null) return;
+
+            if (s_volleyFrame != Time.frameCount)
+            {
+                s_volleyFrame = Time.frameCount;
+                s_volley.Clear();
+            }
+            for (int i = 0; i < s_volley.Count; i++)
+                if (s_volley[i] != null) Physics.IgnoreCollision(mine, s_volley[i]);
+            s_volley.Add(mine);
         }
 
         /// <summary>Takes on a kind's spec and size, once.</summary>
@@ -447,6 +474,11 @@ namespace PummelCustomItems
 
             if (m_rb != null) m_rb.isKinematic = true;
             SetVisible(false);
+
+            // It lingers for two seconds before the host removes it, and its collider used to
+            // linger with it: an invisible ball that the pieces of its own blast bounced off.
+            Collider[] cs = GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < cs.Length; i++) cs[i].enabled = false;
 
             if (m_spec.BlastRadius > 3f)
             {

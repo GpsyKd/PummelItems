@@ -46,7 +46,26 @@ namespace PummelCustomItems
         {
             m_owner = GameManager.GetPlayerWithID((short)base.OwnerSlot);
             PaintForOwner();
+            ParentToBoard();
             base.OnNetInitialize();
+        }
+
+        /// <summary>
+        /// Makes the mine part of the board world. The game hides that world while a minigame
+        /// plays; a mine left where the network spawned it stayed visible, hanging in mid-air
+        /// over the minigame.
+        /// </summary>
+        private void ParentToBoard()
+        {
+            try
+            {
+                GameObject world = GameManager.BoardRoot;
+                if (world != null) transform.SetParent(world.transform, true);
+            }
+            catch (Exception e)
+            {
+                Core.Warn("Mine: could not attach to the board: " + e.Message);
+            }
         }
 
         /// <summary>
@@ -90,12 +109,15 @@ namespace PummelCustomItems
             transform.position = node.transform.position + Vector3.up * 0.22f;
             m_triggerRadius = TriggerRadiusFor(node);
 
+            // Everybody on this node, whichever slot they stand in. Going by distance alone missed
+            // players in the outer slots, beyond the trigger radius: their next move started
+            // through the middle of the node, and the mine went off under them as they left.
             m_waitForLeave.Clear();
             for (int i = 0; i < GameManager.PlayerCount; i++)
             {
                 GamePlayer gp = GameManager.GetPlayerAt(i);
                 if (gp == null || gp.BoardObject == null || OwnedBy(gp.BoardObject)) continue;
-                if (IsOnMine(gp.BoardObject)) m_waitForLeave.Add(gp.GlobalID);
+                if (IsOnMine(gp.BoardObject) || OnMineNode(gp.BoardObject)) m_waitForLeave.Add(gp.GlobalID);
             }
 
             Core.Log("Mine: armed on node " + m_nodeID + ", trigger radius " +
@@ -140,6 +162,11 @@ namespace PummelCustomItems
             return d.sqrMagnitude <= m_triggerRadius * m_triggerRadius;
         }
 
+        private bool OnMineNode(BoardPlayer bp)
+        {
+            return bp.CurrentNode != null && bp.CurrentNode.NodeID == m_nodeID;
+        }
+
         internal bool OwnedBy(BoardPlayer p)
         {
             return m_owner != null && p != null && m_owner.BoardObject == p;
@@ -151,6 +178,7 @@ namespace PummelCustomItems
 
             List<byte> victims = new List<byte>();
             List<byte> damage = new List<byte>();
+            List<byte> modes = new List<byte>();
 
             int n = Physics.OverlapSphereNonAlloc(transform.position, BlastRadius, m_hits,
                                                   ActorLayerMask, QueryTriggerInteraction.Collide);
@@ -162,21 +190,38 @@ namespace PummelCustomItems
                 if (!seen.Add(actor.ActorID)) continue;
                 if (FriendlyFire.Spares(actor, m_owner)) continue;
 
+                byte dmg = (byte)UnityEngine.Random.Range(DamageMin, DamageMax + 1);
                 victims.Add(actor.ActorID);
-                damage.Add((byte)UnityEngine.Random.Range(DamageMin, DamageMax + 1));
+                damage.Add(dmg);
+                modes.Add(HitMode(actor, dmg));
             }
 
-            SendRPC("BlowRPC", NetRPCDelivery.RELIABLE_ORDERED, victims.ToArray(), damage.ToArray());
-            Blow(victims.ToArray(), damage.ToArray());
+            // How each victim takes it is decided here, once, and sent along: a client that
+            // judged for itself could see a walker the host no longer saw walking.
+            SendRPC("BlowRPC", NetRPCDelivery.RELIABLE_ORDERED, victims.ToArray(), damage.ToArray(), modes.ToArray());
+            Blow(victims.ToArray(), damage.ToArray(), modes.ToArray());
         }
 
         [NetRPC(true, NetRPCSecurity.OWNER, NetRPCSecurity.ALL)]
-        public void BlowRPC(NetPlayer sender, byte[] hitPlayers, byte[] hitDamage)
+        public void BlowRPC(NetPlayer sender, byte[] hitPlayers, byte[] hitDamage, byte[] hitModes)
         {
-            Blow(hitPlayers, hitDamage);
+            Blow(hitPlayers, hitDamage, hitModes);
         }
 
-        private void Blow(byte[] hitPlayers, byte[] hitDamage)
+        // How a victim takes the blast.
+        private const byte Knocked = 0;      // standing: thrown about, as by any blast
+        private const byte Flinch = 1;       // walking and surviving: a flinch, and walk on
+        private const byte DiesHere = 2;     // walking into their death: the walk ends on the mine
+
+        private static byte HitMode(BoardActor actor, byte damage)
+        {
+            BoardPlayer bp = actor as BoardPlayer;
+            if (bp == null || !Walking(bp)) return Knocked;
+            DamageInstance d = new DamageInstance { damage = damage };
+            return WouldKill(bp, d) ? DiesHere : Flinch;
+        }
+
+        private void Blow(byte[] hitPlayers, byte[] hitDamage, byte[] hitModes)
         {
             if (m_dead) return;
             m_dead = true;
@@ -186,7 +231,7 @@ namespace PummelCustomItems
                 BoardActor actor = GameManager.Board.GetActor(hitPlayers[i]);
                 if (actor == null) continue;
 
-                actor.ApplyDamage(new DamageInstance
+                DamageInstance d = new DamageInstance
                 {
                     damage = hitDamage[i],
                     origin = transform.position,
@@ -198,7 +243,27 @@ namespace PummelCustomItems
                     details = "Mine",
                     killer = (m_owner != null) ? m_owner.BoardObject : null,
                     removeKeys = true,
-                });
+                };
+
+                byte mode = (hitModes != null && i < hitModes.Length) ? hitModes[i] : Knocked;
+                BoardPlayer bp = actor as BoardPlayer;
+                if (bp != null && mode == DiesHere)
+                {
+                    // The walk ends here, on the mine, and the player dies standing on it: the
+                    // game's death follows from a player at rest. Killed mid-walk, it revived
+                    // them back into the walk they had been on.
+                    StopWalk(bp);
+                }
+                else if (mode == Flinch)
+                {
+                    // A survivor flinches and walks on. A ragdoll used to cut the walk off: the
+                    // game took the fall for the end of the move, landed the player on the far
+                    // end of the stretch and dropped them there from the sky, which played like
+                    // a death and a respawn - and left the turn half done.
+                    d.ragdoll = false;
+                    d.hitAnim = true;
+                }
+                actor.ApplyDamage(d);
             }
 
             ModAssets.Play("snd_blast", 0.85f);
@@ -210,6 +275,65 @@ namespace PummelCustomItems
 
             Core.Log("Mine: blew up, " + hitPlayers.Length + " hit");
             if (NetSystem.IsServer) StartCoroutine(KillLater());
+        }
+
+        private static bool Walking(BoardPlayer bp)
+        {
+            BoardPlayerState s = bp.PlayerState;
+            return s == BoardPlayerState.Moving || s == BoardPlayerState.MoveJump;
+        }
+
+        /// <summary>Whether the blow finishes them, with the board's modifiers (glass cannons) applied.</summary>
+        private static bool WouldKill(BoardPlayer bp, DamageInstance d)
+        {
+            if (bp.CactusScript != null || bp.PresentScript != null) return false;   // absorbed whole
+            DamageInstance probe = d;
+            BoardModifier.ModifyAppliedDamage(bp, ref probe);
+            return bp.LocalHealth <= probe.damage;
+        }
+
+        private static readonly AccessTools.FieldRef<BoardPlayer, int> s_moveSteps =
+            AccessTools.FieldRefAccess<BoardPlayer, int>("curMoveSteps");
+        private static readonly AccessTools.FieldRef<BoardPlayer, BoardNode> s_moveTarget =
+            AccessTools.FieldRefAccess<BoardPlayer, BoardNode>("targetNode");
+
+        /// <summary>
+        /// Ends a walk on this mine's node: no steps left, nothing to walk to, standing here.
+        /// The board sees the move finish where the player now is.
+        /// </summary>
+        private void StopWalk(BoardPlayer bp)
+        {
+            try
+            {
+                BoardNode here = NodeUnderMine();
+                s_moveSteps(bp) = 0;
+                s_moveTarget(bp) = null;
+                bp.moveVelocity = 0f;
+                if (here != null) bp.CurrentNode = here;
+                bp.SetState(BoardPlayerState.Idle);
+                Core.Log("Mine: stopped " + bp.GamePlayer.Name + "'s walk on node " + (here != null ? here.NodeID : -1));
+            }
+            catch (Exception e)
+            {
+                Core.Warn("Mine: could not stop the walk: " + e.Message);
+            }
+        }
+
+        /// <summary>The node the mine lies on. Only the host knows it by id, so every machine finds it by place.</summary>
+        private BoardNode NodeUnderMine()
+        {
+            BoardNode best = null;
+            float bestDist = float.MaxValue;
+            BoardNode[] nodes = GameManager.Board != null ? GameManager.Board.BoardNodes : null;
+            if (nodes == null) return null;
+            for (int i = 0; i < nodes.Length; i++)
+            {
+                if (nodes[i] == null) continue;
+                Vector3 d = nodes[i].transform.position - transform.position;
+                d.y = 0f;
+                if (d.sqrMagnitude < bestDist) { bestDist = d.sqrMagnitude; best = nodes[i]; }
+            }
+            return best;
         }
 
         private IEnumerator KillLater()
@@ -234,7 +358,8 @@ namespace PummelCustomItems
 
                 if (!IsOnMine(bp))
                 {
-                    m_waitForLeave.Remove(gp.GlobalID);
+                    // Free to set it off once clear of it, and no longer standing on its node.
+                    if (!OnMineNode(bp)) m_waitForLeave.Remove(gp.GlobalID);
                     continue;
                 }
                 if (m_waitForLeave.Contains(gp.GlobalID)) continue;
@@ -247,6 +372,34 @@ namespace PummelCustomItems
 
         private void OnDestroy()
         {
+        }
+    }
+
+    /// <summary>
+    /// A player killed while still knocked down is brought back standing.
+    ///
+    /// The game remembers the state a player died in and puts them back into it on revival.
+    /// Items of ours that hit more than once - the boomerang going and coming back, a banana's
+    /// pieces, the ricochet's pellets - can land the killing blow while the player is still in
+    /// the ragdoll from the first, and the game then revived them back into a ragdoll ("Pre
+    /// Kill State was: Ragdolling - this probably shouldn't happen"), with no fall to end it.
+    /// </summary>
+    [HarmonyPatch(typeof(BoardPlayer), "SetState")]
+    internal static class Patch_BoardPlayer_DieFromRagdoll
+    {
+        private static readonly AccessTools.FieldRef<BoardPlayer, BoardPlayerState> s_preKillState =
+            AccessTools.FieldRefAccess<BoardPlayer, BoardPlayerState>("preKillState");
+
+        private static void Prefix(BoardPlayer __instance, out BoardPlayerState __state)
+        {
+            __state = __instance.PlayerState;
+        }
+
+        private static void Postfix(BoardPlayer __instance, BoardPlayerState newState, BoardPlayerState __state)
+        {
+            if (newState != BoardPlayerState.Dying || __state != BoardPlayerState.Ragdolling) return;
+            try { s_preKillState(__instance) = BoardPlayerState.Idle; }
+            catch (Exception e) { Core.Warn("revive state fix failed: " + e.Message); }
         }
     }
 

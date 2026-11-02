@@ -26,12 +26,21 @@ namespace PummelCustomItems
         public Vector3 HeldScale = Vector3.one;
         public PlayerBone HeldBone = PlayerBone.LeftHand;
 
+        // Held up in front with both hands while aimed - the carrying pose all our items use.
+        // Off for an item held the way the game holds one of its own: one hand, at the side.
+        public bool Carried = true;
+
         // Size of the model in the "you got an item" popup. ItemDetails has no scale field
         // for it, so we bake the size into the model copy itself. Kept here rather than in
         // the bundle so tuning is a two-second mod rebuild, not a Unity run.
         public float ReceiveScale = 1f;
 
         public Vector3 ReceiveRotation = Vector3.zero;
+
+        // Builds the model the icon is rendered from, for items whose model is not in the
+        // bundle; the same single-mesh rule applies. Takes precedence over IconAsset, which
+        // stays the fallback.
+        public Func<GameObject> MakeIconModel;
 
         // Bundle asset used purely to render the inventory icon. It must be a SINGLE-mesh
         // model with the viewing angle baked in: PummelTargetRenderer ignores transforms
@@ -244,11 +253,11 @@ namespace PummelCustomItems
                 "PCI_I_Piggy", typeof(PiggyBankItem), "Piggy", 0.7f, 2.4f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 19, "Проклятие",
-                "Наводится на игрока. Его следующий бросок будет единицей.",
+                "Бьёт по сектору: у всех, кто в нём, следующий бросок будет единицей.",
                 "PCI_I_Curse", typeof(CurseItem), "Curse", 0.8f, 2.2f, tier: 3);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 20, "Заморозка",
-                "Наводится на игрока. Его следующий бросок будет нулём — ход впустую.",
+                "Бьёт по сектору: у всех, кто в нём, следующий бросок будет нулём — ход впустую.",
                 "PCI_I_Freeze", typeof(FreezeItem), "Freeze", 0.8f, 2.4f, weaponSpace: true);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 21, "Двойной ход",
@@ -260,11 +269,11 @@ namespace PummelCustomItems
                 "PCI_I_Grapple", typeof(GrappleItem), "Grapple", 0.8f, 2.4f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 23, "Пинок",
-                "Наводится на игрока и отбрасывает его на четыре клетки назад.",
+                "Бьёт по сектору и отбрасывает всех, кто в нём, на четыре клетки назад.",
                 "PCI_I_Kick", typeof(KickItem), "Boot", 0.8f, 2.2f, tier: 2);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 24, "Билет на старт",
-                "Наводится на игрока и отправляет его в начало доски.",
+                "Бьёт по сектору и отправляет всех, кто в нём, в начало доски.",
                 "PCI_I_Ticket", typeof(StartTicketItem), "Ticket", 0.7f, 2.2f, tier: 1);
 
             AddSimpleItem(FIRST_CUSTOM_ID + 25, "Мина",
@@ -279,9 +288,32 @@ namespace PummelCustomItems
                 "Твой следующий ход и весь круг до него: на развилках всех уводит не туда, куда они выбрали.",
                 "PCI_I_Signpost", typeof(FakeSignpostItem), "Signpost", 0.8f, 2.4f, tier: 4);
 
-            AddSimpleItem(FIRST_CUSTOM_ID + 28, "Магнит жизни",
-                "Наводится на игрока. Высасывает 30% его здоровья и отдаёт их тебе.",
-                "PCI_I_LifeMagnet", typeof(LifeMagnetItem), "LifeMagnet", 0.8f, 2.2f, tier: 1);
+            // The game's own magnet, black with red poles: its model is loaded from the game at
+            // runtime and recoloured (StockMagnet), and it is held, and flies in, exactly as the
+            // game's magnet does - so the hold and the sizes are the game's, not tuned ones. The
+            // model in the bundle is only the fallback, should the game's ever not load.
+            s_defs.Add(new CustomItemDef
+            {
+                Id = FIRST_CUSTOM_ID + 28,
+                Name = "Магнит жизни",
+                Description = "Бьёт по сектору: высасывает у каждого, кто в нём, 30% здоровья, но не меньше 6, и отдаёт их тебе. Может добить.",
+                PrefabName = "PCI_I_LifeMagnet",
+                Behaviour = typeof(LifeMagnetItem),
+                SkipTurnAfterUse = false,
+                MakeReceiveModel = () => StockMagnet.Model("LifeMagnet") ?? ModAssets.ModelOrPlaceholder("LifeMagnet",
+                    () => Placeholders.Primitive(PrimitiveType.Sphere, Color.grey, 0.4f)),
+                MakeHeldModel = () => StockMagnet.Model("LifeMagnet") ?? ModAssets.ModelOrPlaceholder("LifeMagnet",
+                    () => Placeholders.Primitive(PrimitiveType.Sphere, Color.grey, 0.25f)),
+                MakeIconModel = () => StockMagnet.IconModel("LifeMagnetIcon"),
+                // the game's item list, for its magnet
+                HeldBone = PlayerBone.RightHand,
+                HeldPosition = new Vector3(-0.07f, 0.38f, 0.06f),
+                HeldRotation = new Vector3(-2.91f, 167.53f, 79.56f),
+                HeldScale = Vector3.one,
+                Carried = false,
+                IconAsset = "LifeMagnetIcon",
+                Tier = 1,
+            });
 
             s_extras.Add(new ExtraPrefabDef
             {
@@ -590,6 +622,17 @@ namespace PummelCustomItems
             return list;
         }
 
+        /// <summary>Whether the item is held in the carrying pose (see CustomItemDef.Carried).</summary>
+        internal static bool IsCarried(ItemDetails d)
+        {
+            for (int i = 0; i < s_defs.Count; i++)
+            {
+                ItemDetails mine;
+                if (s_details.TryGetValue(s_defs[i].Id, out mine) && mine == d) return s_defs[i].Carried;
+            }
+            return true;
+        }
+
         /// <summary>Puts the declared poses back, then whatever held_poses.txt says on top.</summary>
         internal static void ReapplyHeldPoses()
         {
@@ -692,6 +735,14 @@ namespace PummelCustomItems
         /// <summary>The single-mesh model reserved for icon rendering, if the item has one.</summary>
         private static GameObject IconModelFor(CustomItemDef def)
         {
+            GameObject built = def.MakeIconModel != null ? def.MakeIconModel() : null;
+            if (built != null)
+            {
+                built.SetActive(false);
+                UnityEngine.Object.DontDestroyOnLoad(built);
+                return built;
+            }
+
             if (string.IsNullOrEmpty(def.IconAsset)) return null;
             GameObject src = ModAssets.Prefab(def.IconAsset);
             if (src == null) return null;

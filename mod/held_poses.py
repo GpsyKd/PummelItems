@@ -151,7 +151,8 @@ item('PCI_I_DeathWand','L', [0, -0.12, 0],       [0, 1, 0], ROD, [0, 0, 1], FWD,
 item('PCI_I_Vacuum',  'L', [-0.176, 0.15, 0],    [0, 1, 0], UP, [1, 0, 0], FWD, 0.30, 0.8556, push=0.01, shift=(0, 0.01, 0))
 item('PCI_I_Grapple', 'L', [0, -0.05, 0],        [0, 1, 0], norm(add(ROD, mul(FWD, 0.4))), [0, 0, 1], FWD, 0.22, 0.7036, push=0.015)
 item('PCI_I_Signpost','L', [0, -0.10, 0],        [0, 1, 0], UP, [0, 0, 1], FWD, 0.25, 0.5671, push=0.012)
-item('PCI_I_LifeMagnet','L', [0, 0.34, 0],       [0, -1, 0], FWD, [0, 0, 1], UP, 0.22, 0.8699, push=0.02)
+# PCI_I_LifeMagnet is not here: it is the game's own magnet, recoloured, held the way the
+# game holds its magnet - in the right hand, without the carrying pose (ItemRegistry.cs).
 
 if __name__ == '__main__':
     text = '# key  bone  px py pz  rx ry rz  scale   (from held_poses.py)\n' + '\n'.join(lines) + '\n'
